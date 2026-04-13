@@ -1,13 +1,19 @@
-use spin_sdk::http::{IntoResponse, Request, Response};
+use spin_sdk::http::Router;
+use spin_sdk::http::{IntoResponse, Request};
 use spin_sdk::http_component;
 
-/// A simple Spin HTTP component.
+use crate::routes::create_account;
+use crate::util::pong;
+
+mod routes;
+mod util;
+mod models;
+
 #[http_component]
 fn handle_wakey_server(req: Request) -> anyhow::Result<impl IntoResponse> {
-    println!("Handling request to {:?}", req.header("spin-full-url"));
-    Ok(Response::builder()
-        .status(200)
-        .header("content-type", "text/plain")
-        .body("Hello World!")
-        .build())
+    let mut router = Router::new();
+    router.get("/ping", pong);
+    router.post("/account", create_account);
+
+    Ok(router.handle(req))
 }
