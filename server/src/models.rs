@@ -1,8 +1,12 @@
+use anyhow::{anyhow, Result};
 use bcrypt::verify;
-use serde::{Deserialize, Serialize};
-use spin_sdk::sqlite3::{Connection, Value};
+use serde::Deserialize;
+use spin_sdk::{
+    http::Request,
+    sqlite3::{Connection, Value},
+};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
@@ -22,21 +26,43 @@ impl Credentials {
         verify(&self.password, pass_hash).map_err(Into::into)
     }
 }
+impl JsonPayload for Credentials {}
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Key {
     pub name: String,
     pub value: Option<String>,
 }
+impl JsonPayload for Key {}
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct KeyPayload {
     pub creds: Credentials,
     pub key: Key,
 }
+impl JsonPayload for KeyPayload {}
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct ChangePasswordPayload {
     pub creds: Credentials,
     pub new_password: String,
+}
+impl JsonPayload for ChangePasswordPayload {}
+
+pub trait JsonPayload: for<'a> Deserialize<'a> {
+    fn from_request(req: Request) -> Result<Self> {
+        let str = String::from_utf8(req.into_body())
+            .map_err(|_| anyhow!("request missing body".to_string()))?;
+
+        serde_json::from_str::<Self>(&str)
+            .map_err(|_| anyhow!("Could not parse request body".to_string()))
+    }
+
+    fn from_request_parts(req: &Request) -> Result<Self> {
+        let str = String::from_utf8(req.body().to_owned())
+            .map_err(|_| anyhow!("request missing body".to_string()))?;
+
+        serde_json::from_str::<Self>(&str)
+            .map_err(|_| anyhow!("Could not parse request body".to_string()))
+    }
 }

@@ -6,34 +6,22 @@ use spin_sdk::{
 };
 
 use crate::{
-    models::{ChangePasswordPayload, Credentials},
+    models::{ChangePasswordPayload, Credentials, JsonPayload},
     util::get_connection,
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection = match get_connection() {
-        Ok(conn) => conn,
-        Err(err) => {
-            return Err(anyhow!(format!(
-                "Could not connect to the database: {}",
-                err
-            )))
-        }
-    };
+    let connection = get_connection()
+        .map_err(|err| anyhow!(format!("Could not connect to the database: {}", err)))?;
 
-    let Ok(creds) = String::from_utf8(req.into_body()) else {
-        return Err(anyhow!("request missing body".to_string()));
-    };
-    let Ok(creds) = serde_json::from_str::<Credentials>(&creds) else {
-        return Err(anyhow!("Could not parse request body".to_string()));
-    };
+    let creds = Credentials::from_request(req)?;
 
-    let result = connection.execute(
+    connection.execute(
         "select id from Accounts where username = ?",
         &[Value::Text(creds.username.clone())],
     )?;
 
-    if result.rows.len() != 0 {
+    if connection.changes() != 0 {
         Ok(Response::builder()
             .status(409)
             .body("username already exists")
@@ -51,56 +39,35 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 }
 
 pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection = match get_connection() {
-        Ok(conn) => conn,
-        Err(err) => {
-            return Err(anyhow!(format!(
-                "Could not connect to the database: {}",
-                err
-            )))
-        }
-    };
+    let connection = get_connection()
+        .map_err(|err| anyhow!(format!("Could not connect to the database: {}", err)))?;
 
-    let Ok(creds) = String::from_utf8(req.into_body()) else {
-        return Err(anyhow!("request missing body".to_string()));
-    };
-    
-    let Ok(ChangePasswordPayload {
+    let ChangePasswordPayload {
         creds,
         new_password,
-    }) = serde_json::from_str::<ChangePasswordPayload>(&creds)
-    else {
-        return Err(anyhow!("Could not parse request body".to_string()));
-    };
-    
+    } = ChangePasswordPayload::from_request(req)?;
+
     if creds.verify(&connection)? {
         let hash = hash(new_password, DEFAULT_COST)?;
-        connection.execute("update Accounts set pass_hash = ? where username = ?", &[Value::Text(hash), Value::Text(creds.username)])?;
-        
+        connection.execute(
+            "update Accounts set pass_hash = ? where username = ?",
+            &[Value::Text(hash), Value::Text(creds.username)],
+        )?;
+
         Ok(Response::builder().status(200).build())
     } else {
-        Ok(Response::builder().status(400).body("invalid password").build())
+        Ok(Response::builder()
+            .status(400)
+            .body("invalid password")
+            .build())
     }
 }
 
-
 pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection = match get_connection() {
-        Ok(conn) => conn,
-        Err(err) => {
-            return Err(anyhow!(format!(
-                "Could not connect to the database: {}",
-                err
-            )))
-        }
-    };
+    let connection = get_connection()
+        .map_err(|err| anyhow!(format!("Could not connect to the database: {}", err)))?;
 
-    let Ok(creds) = String::from_utf8(req.into_body()) else {
-        return Err(anyhow!("request missing body".to_string()));
-    };
-    let Ok(creds) = serde_json::from_str::<Credentials>(&creds) else {
-        return Err(anyhow!("Could not parse request body".to_string()));
-    };
+    let creds = Credentials::from_request(req)?;
 
     if creds.verify(&connection)? {
         connection.execute(
