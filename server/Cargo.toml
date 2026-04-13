@@ -1,5 +1,5 @@
 [package]
-name = "wakey-server"
+name = "krypt-server"
 authors = ["Parth-Bathe0142 <parth.bathe0142@gmail.com>"]
 description = "Server for the keyring application"
 version = "0.1.0"

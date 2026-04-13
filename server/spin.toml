@@ -3,20 +3,20 @@
 spin_manifest_version = 2
 
 [application]
-name = "wakey-server"
+name = "krypt-server"
 version = "0.1.0"
 authors = ["Parth-Bathe0142 <parth.bathe0142@gmail.com>"]
 description = "Server for the keyring application"
 
 [[trigger.http]]
 route = "/..."
-component = "wakey-server"
+component = "krypt-server"
 
-[component.wakey-server]
-source = "../target/wasm32-wasip1/release/wakey_server.wasm"
+[component.krypt-server]
+source = "../target/wasm32-wasip1/release/krypt_server.wasm"
 allowed_outbound_hosts = []
 sqlite_databases = ["default"]
 
-[component.wakey-server.build]
+[component.krypt-server.build]
 command = "cargo build --target wasm32-wasip1 --release"
 watch = ["src/**/*.rs", "Cargo.toml"]
