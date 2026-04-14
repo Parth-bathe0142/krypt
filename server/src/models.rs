@@ -1,30 +1,13 @@
 use anyhow::{anyhow, Result};
-use bcrypt::verify;
 use serde::Deserialize;
 use spin_sdk::{
     http::Request,
-    sqlite3::{Connection, Value},
 };
 
 #[derive(Deserialize, Debug)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
-}
-impl Credentials {
-    pub fn verify(&self, conn: &Connection) -> anyhow::Result<bool> {
-        let rows = conn.execute(
-            "select pass_hash from Accounts where username = ?",
-            &[Value::Text(self.username.clone())],
-        )?;
-
-        let Some(row) = rows.rows.first() else {
-            return Ok(false);
-        };
-
-        let pass_hash = row.get::<&str>(0).unwrap();
-        verify(&self.password, pass_hash).map_err(Into::into)
-    }
 }
 
 #[derive(Deserialize, Debug)]

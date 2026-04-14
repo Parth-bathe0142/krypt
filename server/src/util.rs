@@ -1,8 +1,13 @@
+use anyhow::anyhow;
 use anyhow::Result;
+use bcrypt::verify;
+use spin_sdk::sqlite3::Value;
 use spin_sdk::{
     http::{Params, Request, Response},
     sqlite3::Connection,
 };
+
+use crate::models::Credentials;
 
 pub(crate) fn pong(_: Request, _: Params) -> Result<Response> {
     Ok(Response::builder()
@@ -34,6 +39,26 @@ pub(crate) fn get_connection() -> Result<Connection> {
     )?;
 
     Ok(connection)
+}
+
+impl Credentials {
+    pub fn verify(&self, conn: &Connection) -> anyhow::Result<Option<i64>> {
+        let rows = conn.execute(
+            "select pass_hash, id from Accounts where username = ?",
+            &[Value::Text(self.username.clone())],
+        )?;
+
+        let Some(row) = rows.rows.first() else {
+            return Ok(None);
+        };
+
+        let pass_hash = row.get::<&str>(0).unwrap();
+        if verify(&self.password, pass_hash).map_err(|_| anyhow!("Error verifying password"))? {
+            Ok(row.get(1))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[inline]

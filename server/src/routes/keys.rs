@@ -15,18 +15,7 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
 
-    if creds.verify(&connection)? {
-        let id = connection
-            .execute(
-                "select id from Accounts where username = ?",
-                &[Value::Text(creds.username)],
-            )?
-            .rows
-            .first()
-            .ok_or(anyhow!("Error fetching account"))?
-            .get(0)
-            .unwrap();
-
+    if let Some(id) = creds.verify(&connection)? {
         let rows = connection
             .execute(
                 "select value from Keys where name = ? and account_id = ?",
@@ -53,18 +42,7 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
 
-    if creds.verify(&connection)? {
-        let id = connection
-            .execute(
-                "select id from Accounts where username = ?",
-                &[Value::Text(creds.username)],
-            )?
-            .rows
-            .first()
-            .ok_or(anyhow!("Error fetching account"))?
-            .get(0)
-            .unwrap();
-
+    if let Some(id) = creds.verify(&connection)? {
         if let Some(val) = key.value {
             connection.execute(
                 "insert into Keys (account_id, name, value) values (?, ?, ?)",
@@ -94,27 +72,7 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
         new_value,
     } = ChangeKeyPayload::from_request(req)?;
 
-    if creds.verify(&connection)? {
-        let id = connection
-            .execute(
-                "select id from Accounts where username = ?",
-                &[Value::Text(creds.username)],
-            )?
-            .rows
-            .first()
-            .ok_or(anyhow!("Error fetching account"))?
-            .get(0)
-            .unwrap();
-
-        connection
-            .execute(
-                "select * from Keys where account_id = ? and name = ?",
-                &[Value::Integer(id), Value::Text(name.clone())],
-            )?
-            .rows
-            .first()
-            .ok_or(anyhow!("Key does not exist"))?;
-
+    if let Some(id) = creds.verify(&connection)? {
         connection.execute(
             "update Keys set value = ? where account_id = ? and name = ?",
             &[
@@ -127,7 +85,7 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
         if connection.changes() == 1 {
             Ok(Response::builder().status(201).build())
         } else {
-            Err(anyhow!("Error changing key value"))
+            Err(anyhow!("Key does not exist"))
         }
     } else {
         invalid_creds()
@@ -140,18 +98,7 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
 
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
 
-    if creds.verify(&connection)? {
-        let id = connection
-            .execute(
-                "select id from Accounts where username = ?",
-                &[Value::Text(creds.username)],
-            )?
-            .rows
-            .first()
-            .ok_or(anyhow!("Error fetching account"))?
-            .get(0)
-            .unwrap();
-
+    if let Some(id) = creds.verify(&connection)? {
         if let Some(val) = key.value {
             connection
                 .execute(
@@ -167,7 +114,7 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
                 .ok_or(anyhow!("Error fetching account"))?;
 
             connection.execute(
-                "delete from Keys where id = ? and name = ?",
+                "delete from Keys where account_id = ? and name = ?",
                 &[Value::Integer(id), Value::Text(key.name)],
             )?;
 

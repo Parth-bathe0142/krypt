@@ -16,12 +16,13 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 
     let creds = Credentials::from_request(req)?;
 
-    connection.execute(
+    let rows = connection.execute(
         "select id from Accounts where username = ?",
         &[Value::Text(creds.username.clone())],
-    )?;
+    )?
+    .rows;
 
-    if connection.changes() != 0 {
+    if rows.first().is_some() {
         Ok(Response::builder()
             .status(409)
             .body("username already exists")
@@ -47,7 +48,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
         new_password,
     } = ChangePasswordPayload::from_request(req)?;
 
-    if creds.verify(&connection)? {
+    if let Some(_) = creds.verify(&connection)? {
         let hash = hash(new_password, DEFAULT_COST)?;
         connection.execute(
             "update Accounts set pass_hash = ? where username = ?",
@@ -66,11 +67,14 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
 
     let creds = Credentials::from_request(req)?;
 
-    if creds.verify(&connection)? {
+    if let Some(id) = creds.verify(&connection)? {
         connection.execute(
             "delete from Accounts where username = ?",
             &[Value::Text(creds.username)],
         )?;
+        
+        connection.execute("delete from Keys where account_id = ?", &[Value::Integer(id)])?;
+        
         Ok(Response::builder().status(200).build())
     } else {
         invalid_creds()
