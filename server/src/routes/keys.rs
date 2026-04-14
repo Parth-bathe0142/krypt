@@ -42,7 +42,7 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
             .to_owned()
             .unwrap();
 
-        let value = decrypt(&value, &creds.password, &creds.username)?;
+        let value = decrypt(&value, &creds.password, &creds.username, &connection)?;
 
         Ok(Response::builder()
             .status(200)
@@ -111,7 +111,7 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
         clear_rate_limit(&creds.username)?;
 
         if let Some(val) = key.value {
-            let encrypted = encrypt(&val, &creds.password, &creds.username);
+            let encrypted = encrypt(&val, &creds.password, &creds.username, &connection)?;
             connection.execute(
                 "insert into Keys (account_id, name, value) values (?, ?, ?)",
                 &[
@@ -154,7 +154,7 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
 
-        let encrypted = encrypt(&new_value, &creds.password, &creds.username);
+        let encrypted = encrypt(&new_value, &creds.password, &creds.username, &connection)?;
 
         connection.execute(
             "update Keys set value = ? where account_id = ? and name = ?",

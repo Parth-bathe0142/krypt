@@ -1,25 +1,29 @@
+
+use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use aes_gcm::aead::rand_core::RngCore;
 use argon2::Argon2;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use spin_sdk::sqlite3::Connection;
+use anyhow::{Result};
 
-fn derive_key(password: &str, username: &str) -> [u8; 32] {
+use crate::util::get_salt;
+
+fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
     let mut key = [0u8; 32];
+
     Argon2::default()
-        .hash_password_into(
-            password.as_bytes(),
-            username.as_bytes(), // salt
-            &mut key,
-        )
+        .hash_password_into(password.as_bytes(), &salt, &mut key)
         .expect("argon2 failed");
     key
 }
 
-pub fn encrypt(plaintext: &str, password: &str, username: &str) -> String {
-    let key = derive_key(password, username);
+pub fn encrypt(plaintext: &str, password: &str, username: &str, conn: &Connection) -> Result<String> {
+    let salt = get_salt(username, conn)?;
+    
+    let key = derive_key(password, salt.as_bytes());
     let cipher = Aes256Gcm::new(&key.into());
 
     let mut nonce_bytes = [0u8; 12];
@@ -33,11 +37,13 @@ pub fn encrypt(plaintext: &str, password: &str, username: &str) -> String {
     // Store nonce prepended to ciphertext, base64 encoded
     let mut combined = nonce_bytes.to_vec();
     combined.extend(ciphertext);
-    B64.encode(combined)
+    Ok(B64.encode(combined))
 }
 
-pub fn decrypt(encoded: &str, password: &str, username: &str) -> anyhow::Result<String> {
-    let key = derive_key(password, username);
+pub fn decrypt(encoded: &str, password: &str, username: &str, conn: &Connection) -> anyhow::Result<String> {
+    let salt = get_salt(username, conn)?;
+    
+    let key = derive_key(password, salt.as_bytes());
     let cipher = Aes256Gcm::new(&key.into());
 
     let combined = B64.decode(encoded)?;

@@ -9,7 +9,7 @@ use crate::{
     encryption::{decrypt, encrypt},
     models::{ChangePasswordPayload, Credentials, JsonPayload},
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, invalid_creds},
+    util::{get_connection, invalid_creds, validate_password, validate_username},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
@@ -24,6 +24,9 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
             &[Value::Text(creds.username.clone())],
         )?
         .rows;
+    
+    validate_username(&creds.username)?;
+    validate_password(&creds.password)?;
 
     if rows.first().is_some() {
         Ok(Response::builder()
@@ -57,6 +60,8 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
             .body("Too many attempts, try again later")
             .build());
     }
+    
+    validate_password(&creds.password)?;
 
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
@@ -77,8 +82,8 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
                 .to_owned();
             let encrypted_value = row.get::<&str>(1).ok_or(anyhow!("Missing key value"))?;
 
-            let plaintext = decrypt(encrypted_value, &creds.password, &creds.username)?;
-            let re_encrypted = encrypt(&plaintext, &new_password, &creds.username);
+            let plaintext = decrypt(encrypted_value, &creds.password, &creds.username, &connection)?;
+            let re_encrypted = encrypt(&plaintext, &new_password, &creds.username, &connection)?;
 
             connection.execute(
                 "update Keys set value = ? where account_id = ? and name = ?",
