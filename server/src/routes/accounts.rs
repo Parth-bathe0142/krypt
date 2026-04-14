@@ -7,12 +7,12 @@ use spin_sdk::{
 
 use crate::{
     models::{ChangePasswordPayload, Credentials, JsonPayload},
-    util::get_connection,
+    util::{get_connection, invalid_creds},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
     let connection = get_connection()
-        .map_err(|err| anyhow!(format!("Could not connect to the database: {}", err)))?;
+        .map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let creds = Credentials::from_request(req)?;
 
@@ -34,13 +34,13 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
             &[Value::Text(creds.username), Value::Text(hash)],
         )?;
 
-        Ok(Response::builder().status(200).build())
+        Ok(Response::builder().status(201).build())
     }
 }
 
 pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl IntoResponse> {
     let connection = get_connection()
-        .map_err(|err| anyhow!(format!("Could not connect to the database: {}", err)))?;
+        .map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let ChangePasswordPayload {
         creds,
@@ -56,16 +56,13 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
 
         Ok(Response::builder().status(200).build())
     } else {
-        Ok(Response::builder()
-            .status(400)
-            .body("invalid password")
-            .build())
+        invalid_creds()
     }
 }
 
 pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
     let connection = get_connection()
-        .map_err(|err| anyhow!(format!("Could not connect to the database: {}", err)))?;
+        .map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let creds = Credentials::from_request(req)?;
 
@@ -76,9 +73,6 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
         )?;
         Ok(Response::builder().status(200).build())
     } else {
-        Ok(Response::builder()
-            .status(400)
-            .body("Invalid Username/Password")
-            .build())
+        invalid_creds()
     }
 }

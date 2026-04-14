@@ -26,28 +26,31 @@ impl Credentials {
         verify(&self.password, pass_hash).map_err(Into::into)
     }
 }
-impl JsonPayload for Credentials {}
 
 #[derive(Deserialize, Debug)]
 pub struct Key {
     pub name: String,
     pub value: Option<String>,
 }
-impl JsonPayload for Key {}
 
 #[derive(Deserialize, Debug)]
 pub struct KeyPayload {
     pub creds: Credentials,
     pub key: Key,
 }
-impl JsonPayload for KeyPayload {}
 
 #[derive(Deserialize, Debug)]
 pub struct ChangePasswordPayload {
     pub creds: Credentials,
     pub new_password: String,
 }
-impl JsonPayload for ChangePasswordPayload {}
+
+#[derive(Deserialize)]
+pub(crate) struct ChangeKeyPayload {
+    pub creds: Credentials,
+    pub name: String,
+    pub new_value: String
+}
 
 pub trait JsonPayload: for<'a> Deserialize<'a> {
     fn from_request(req: Request) -> Result<Self> {
@@ -58,6 +61,7 @@ pub trait JsonPayload: for<'a> Deserialize<'a> {
             .map_err(|_| anyhow!("Could not parse request body".to_string()))
     }
 
+    #[allow(unused)]
     fn from_request_parts(req: &Request) -> Result<Self> {
         let str = String::from_utf8(req.body().to_owned())
             .map_err(|_| anyhow!("request missing body".to_string()))?;
@@ -66,3 +70,4 @@ pub trait JsonPayload: for<'a> Deserialize<'a> {
             .map_err(|_| anyhow!("Could not parse request body".to_string()))
     }
 }
+impl<T: for<'a> Deserialize<'a>> JsonPayload for T {}
