@@ -8,6 +8,7 @@ use crate::routes::{
 };
 use crate::util::pong;
 
+mod encryption;
 mod models;
 mod rate_limiting;
 mod routes;

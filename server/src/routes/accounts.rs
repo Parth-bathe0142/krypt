@@ -6,6 +6,7 @@ use spin_sdk::{
 };
 
 use crate::{
+    encryption::{decrypt, encrypt},
     models::{ChangePasswordPayload, Credentials, JsonPayload},
     rate_limiting::{check_rate_limit, clear_rate_limit},
     util::{get_connection, invalid_creds},
@@ -57,8 +58,37 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
             .build());
     }
 
-    if let Some(_) = creds.verify(&connection)? {
+    if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
+
+        // Fetch all keys for this account
+        let rows = connection
+            .execute(
+                "select name, value from Keys where account_id = ?",
+                &[Value::Integer(id)],
+            )?
+            .rows;
+
+        // Re-encrypt each value with the new password
+        for row in rows {
+            let name = row
+                .get::<&str>(0)
+                .ok_or(anyhow!("Missing key name"))?
+                .to_owned();
+            let encrypted_value = row.get::<&str>(1).ok_or(anyhow!("Missing key value"))?;
+
+            let plaintext = decrypt(encrypted_value, &creds.password, &creds.username)?;
+            let re_encrypted = encrypt(&plaintext, &new_password, &creds.username);
+
+            connection.execute(
+                "update Keys set value = ? where account_id = ? and name = ?",
+                &[
+                    Value::Text(re_encrypted),
+                    Value::Integer(id),
+                    Value::Text(name),
+                ],
+            )?;
+        }
 
         let hash = hash(new_password, DEFAULT_COST)?;
         connection.execute(
