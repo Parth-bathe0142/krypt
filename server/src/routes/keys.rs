@@ -7,6 +7,7 @@ use spin_sdk::{
 
 use crate::{
     models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload},
+    rate_limiting::{check_rate_limit, clear_rate_limit},
     util::{get_connection, invalid_creds},
 };
 
@@ -16,7 +17,16 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
 
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return Ok(Response::builder()
+            .status(429)
+            .body("Too many attempts, try again later")
+            .build());
+    }
+
     if let Some(id) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
+
         let rows = connection
             .execute(
                 "select value from Keys where name = ? and account_id = ?",
@@ -47,7 +57,16 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
 
     let creds = Credentials::from_request(req)?;
 
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return Ok(Response::builder()
+            .status(429)
+            .body("Too many attempts, try again later")
+            .build());
+    }
+
     if let Some(id) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
+        
         let result = connection
             .execute(
                 "select name, value from Keys account_id = ?",
@@ -78,7 +97,16 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
 
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return Ok(Response::builder()
+            .status(429)
+            .body("Too many attempts, try again later")
+            .build());
+    }
+
     if let Some(id) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
+        
         if let Some(val) = key.value {
             connection.execute(
                 "insert into Keys (account_id, name, value) values (?, ?, ?)",
@@ -107,8 +135,17 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
         name,
         new_value,
     } = ChangeKeyPayload::from_request(req)?;
+    
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return Ok(Response::builder()
+            .status(429)
+            .body("Too many attempts, try again later")
+            .build());
+    }
 
     if let Some(id) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
+        
         connection.execute(
             "update Keys set value = ? where account_id = ? and name = ?",
             &[
@@ -133,8 +170,17 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
         get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
+    
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return Ok(Response::builder()
+            .status(429)
+            .body("Too many attempts, try again later")
+            .build());
+    }
 
     if let Some(id) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
+        
         connection.execute(
             "delete from Keys where account_id = ? and name = ?",
             &[Value::Integer(id), Value::Text(key.name)],

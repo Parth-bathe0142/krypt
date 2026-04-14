@@ -15,6 +15,7 @@ component = "krypt-server"
 [component.krypt-server]
 source = "../target/wasm32-wasip1/release/krypt_server.wasm"
 allowed_outbound_hosts = []
+key_value_stores = ["default"]
 sqlite_databases = ["default"]
 
 [component.krypt-server.build]

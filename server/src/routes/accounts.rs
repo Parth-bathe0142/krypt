@@ -7,20 +7,22 @@ use spin_sdk::{
 
 use crate::{
     models::{ChangePasswordPayload, Credentials, JsonPayload},
+    rate_limiting::{check_rate_limit, clear_rate_limit},
     util::{get_connection, invalid_creds},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection = get_connection()
-        .map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection =
+        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let creds = Credentials::from_request(req)?;
 
-    let rows = connection.execute(
-        "select id from Accounts where username = ?",
-        &[Value::Text(creds.username.clone())],
-    )?
-    .rows;
+    let rows = connection
+        .execute(
+            "select id from Accounts where username = ?",
+            &[Value::Text(creds.username.clone())],
+        )?
+        .rows;
 
     if rows.first().is_some() {
         Ok(Response::builder()
@@ -40,15 +42,24 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 }
 
 pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection = get_connection()
-        .map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection =
+        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let ChangePasswordPayload {
         creds,
         new_password,
     } = ChangePasswordPayload::from_request(req)?;
 
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return Ok(Response::builder()
+            .status(429)
+            .body("Too many attempts, try again later")
+            .build());
+    }
+
     if let Some(_) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
+
         let hash = hash(new_password, DEFAULT_COST)?;
         connection.execute(
             "update Accounts set pass_hash = ? where username = ?",
@@ -62,19 +73,31 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
 }
 
 pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection = get_connection()
-        .map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection =
+        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let creds = Credentials::from_request(req)?;
 
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return Ok(Response::builder()
+            .status(429)
+            .body("Too many attempts, try again later")
+            .build());
+    }
+
     if let Some(id) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
+
         connection.execute(
             "delete from Accounts where username = ?",
             &[Value::Text(creds.username)],
         )?;
-        
-        connection.execute("delete from Keys where account_id = ?", &[Value::Integer(id)])?;
-        
+
+        connection.execute(
+            "delete from Keys where account_id = ?",
+            &[Value::Integer(id)],
+        )?;
+
         Ok(Response::builder().status(200).build())
     } else {
         invalid_creds()
