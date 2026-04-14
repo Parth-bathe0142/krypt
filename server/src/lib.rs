@@ -3,7 +3,8 @@ use spin_sdk::http::{IntoResponse, Request};
 use spin_sdk::http_component;
 
 use crate::routes::{
-    change_key, change_password, create_account, delete_account, delete_key, get_key, set_key,
+    change_key, change_password, create_account, delete_account, delete_key, get_key, list_keys,
+    set_key,
 };
 use crate::util::pong;
 
@@ -21,6 +22,7 @@ fn handle_request(req: Request) -> anyhow::Result<impl IntoResponse> {
     router.delete("/account", delete_account);
 
     router.get("/key", get_key);
+    router.get("/key/list", list_keys);
     router.post("/key", set_key);
     router.put("/key", change_key);
     router.delete("/key", delete_key);

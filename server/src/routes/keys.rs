@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Ok, Result};
+use serde_json::json;
 use spin_sdk::{
     http::{IntoResponse, Params, Request, Response},
     sqlite3::Value,
 };
 
 use crate::{
-    models::{ChangeKeyPayload, JsonPayload, KeyPayload},
+    models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload},
     util::{get_connection, invalid_creds},
 };
 
@@ -30,7 +31,42 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
             .to_owned()
             .unwrap();
 
-        Ok(Response::builder().status(200).body(value).build())
+        Ok(Response::builder()
+            .status(200)
+            .header("Content-Type", "text")
+            .body(value)
+            .build())
+    } else {
+        invalid_creds()
+    }
+}
+
+pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoResponse> {
+    let connection =
+        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+
+    let creds = Credentials::from_request(req)?;
+
+    if let Some(id) = creds.verify(&connection)? {
+        let result = connection
+            .execute(
+                "select name, value from Keys account_id = ?",
+                &[Value::Integer(id)],
+            )?
+            .rows()
+            .map(|row| {
+                json!({
+                    "name": row.get::<&str>("name").unwrap().to_owned(),
+                    "value": row.get::<&str>("value").unwrap().to_owned(),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(Response::builder()
+            .status(200)
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_string(&result)?)
+            .build())
     } else {
         invalid_creds()
     }
@@ -99,32 +135,15 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
 
     if let Some(id) = creds.verify(&connection)? {
-        if let Some(val) = key.value {
-            connection
-                .execute(
-                    "select * from Keys where account_id = ? and name = ? and value = ?",
-                    &[
-                        Value::Integer(id),
-                        Value::Text(key.name.clone()),
-                        Value::Text(val),
-                    ],
-                )?
-                .rows
-                .first()
-                .ok_or(anyhow!("Error fetching account"))?;
+        connection.execute(
+            "delete from Keys where account_id = ? and name = ?",
+            &[Value::Integer(id), Value::Text(key.name)],
+        )?;
 
-            connection.execute(
-                "delete from Keys where account_id = ? and name = ?",
-                &[Value::Integer(id), Value::Text(key.name)],
-            )?;
-
-            if connection.changes() == 1 {
-                Ok(Response::builder().status(200).build())
-            } else {
-                Err(anyhow!("Error deleting key"))
-            }
+        if connection.changes() == 1 {
+            Ok(Response::builder().status(200).build())
         } else {
-            Err(anyhow!("Missing key value"))
+            Err(anyhow!("Error deleting key"))
         }
     } else {
         invalid_creds()
