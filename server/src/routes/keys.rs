@@ -2,7 +2,7 @@ use anyhow::{anyhow, Ok, Result};
 use serde_json::json;
 use spin_sdk::{
     http::{IntoResponse, Params, Request, Response},
-    sqlite3::Value,
+    sqlite::Value,
 };
 
 use crate::{
@@ -116,12 +116,21 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
                 "insert into Keys (account_id, name, value) values (?, ?, ?)",
                 &[
                     Value::Integer(id),
-                    Value::Text(key.name),
+                    Value::Text(key.name.clone()),
                     Value::Text(encrypted),
                 ],
             )?;
 
-            if connection.changes() == 1 {
+            let new_record = connection
+                .execute(
+                    "select * from Keys where account_id = ? and name = ?",
+                    &[Value::Integer(id), Value::Text(key.name)],
+                )?
+                .rows
+                .first()
+                .is_some();
+
+            if new_record {
                 Ok(Response::builder().status(201).build())
             } else {
                 Err(anyhow!("Error saving key"))
@@ -159,13 +168,26 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
         connection.execute(
             "update Keys set value = ? where account_id = ? and name = ?",
             &[
-                Value::Text(encrypted),
+                Value::Text(encrypted.clone()),
                 Value::Integer(id),
-                Value::Text(name),
+                Value::Text(name.clone()),
             ],
         )?;
 
-        if connection.changes() == 1 {
+        let new_record = connection
+            .execute(
+                "select * from Keys where account_id = ? and name = ? and value = ?",
+                &[
+                    Value::Integer(id),
+                    Value::Text(name),
+                    Value::Text(encrypted),
+                ],
+            )?
+            .rows
+            .first()
+            .is_some();
+
+        if new_record {
             Ok(Response::builder().status(201).build())
         } else {
             Err(anyhow!("Key does not exist"))
@@ -193,10 +215,22 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
 
         connection.execute(
             "delete from Keys where account_id = ? and name = ?",
-            &[Value::Integer(id), Value::Text(key.name)],
+            &[Value::Integer(id), Value::Text(key.name.clone())],
         )?;
+        
+        let old_record = connection
+            .execute(
+                "select * from Keys where account_id = ? and name = ?",
+                &[
+                    Value::Integer(id),
+                    Value::Text(key.name),
+                ],
+            )?
+            .rows
+            .first()
+            .is_some();
 
-        if connection.changes() == 1 {
+        if !old_record {
             Ok(Response::builder().status(200).build())
         } else {
             Err(anyhow!("Error deleting key"))

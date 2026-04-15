@@ -6,7 +6,7 @@ use aes_gcm::{
 };
 use argon2::Argon2;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use spin_sdk::sqlite3::Connection;
+use spin_sdk::sqlite::Connection;
 use anyhow::{Result};
 
 use crate::util::get_salt;

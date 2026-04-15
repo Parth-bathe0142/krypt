@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use bcrypt::{hash, DEFAULT_COST};
 use spin_sdk::{
     http::{IntoResponse, Params, Request, Response},
-    sqlite3::Value,
+    sqlite::Value,
 };
 
 use crate::{
@@ -24,7 +24,7 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
             &[Value::Text(creds.username.clone())],
         )?
         .rows;
-    
+
     validate_username(&creds.username)?;
     validate_password(&creds.password)?;
 
@@ -60,13 +60,12 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
             .body("Too many attempts, try again later")
             .build());
     }
-    
+
     validate_password(&creds.password)?;
 
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
 
-        // Fetch all keys for this account
         let rows = connection
             .execute(
                 "select name, value from Keys where account_id = ?",
@@ -74,15 +73,19 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
             )?
             .rows;
 
-        // Re-encrypt each value with the new password
         for row in rows {
-            let name = row
+            let name: String = row
                 .get::<&str>(0)
                 .ok_or(anyhow!("Missing key name"))?
                 .to_owned();
             let encrypted_value = row.get::<&str>(1).ok_or(anyhow!("Missing key value"))?;
 
-            let plaintext = decrypt(encrypted_value, &creds.password, &creds.username, &connection)?;
+            let plaintext = decrypt(
+                encrypted_value,
+                &creds.password,
+                &creds.username,
+                &connection,
+            )?;
             let re_encrypted = encrypt(&plaintext, &new_password, &creds.username, &connection)?;
 
             connection.execute(

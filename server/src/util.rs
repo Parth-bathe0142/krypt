@@ -1,10 +1,10 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use bcrypt::verify;
-use spin_sdk::sqlite3::Value;
+use spin_sdk::sqlite::Value;
 use spin_sdk::{
     http::{Params, Request, Response},
-    sqlite3::Connection,
+    sqlite::Connection,
 };
 
 use crate::models::Credentials;
@@ -18,7 +18,7 @@ pub(crate) fn pong(_: Request, _: Params) -> Result<Response> {
 
 pub(crate) fn get_connection() -> Result<Connection> {
     let connection = Connection::open("default")?;
-    
+
     connection.execute(
         "create table if not exists Accounts (
             id integer primary key,
@@ -28,7 +28,7 @@ pub(crate) fn get_connection() -> Result<Connection> {
         )",
         &[],
     )?;
-    
+
     connection.execute(
         "create table if not exists Keys (
             account_id integer references Accounts(id),
@@ -70,20 +70,24 @@ pub(crate) fn invalid_creds() -> Result<Response> {
         .build())
 }
 
-
 pub fn validate_username(username: &str) -> Result<()> {
     if username.is_empty() {
         return Err(anyhow!("Username cannot be empty"));
     }
-    
+
     if !(3..=32).contains(&username.len()) {
         return Err(anyhow!("Username should be betwwen 3 and 32 characters"));
     }
-    
-    if !username.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
-        return Err(anyhow!("Username can only contain letters, numbers, underscores and hyphens"));
+
+    if !username
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(anyhow!(
+            "Username can only contain letters, numbers, underscores and hyphens"
+        ));
     }
-    
+
     Ok(())
 }
 
@@ -91,23 +95,27 @@ pub fn validate_password(password: &str) -> Result<()> {
     if password.is_empty() {
         return Err(anyhow!("Password cannot be empty"));
     }
-    
+
     if !(8..=32).contains(&password.len()) {
         return Err(anyhow!("Password should be betwwen 8 and 32 characters"));
     }
-    
+
     if !password.chars().any(|c| c.is_uppercase()) {
-        return Err(anyhow!("Password must contain at least one uppercase letter"));
+        return Err(anyhow!(
+            "Password must contain at least one uppercase letter"
+        ));
     }
-    
+
     if !password.chars().any(|c| c.is_lowercase()) {
-        return Err(anyhow!("Password must contain at least one lowercase letter"));
+        return Err(anyhow!(
+            "Password must contain at least one lowercase letter"
+        ));
     }
-    
+
     if !password.chars().any(|c| c.is_numeric()) {
         return Err(anyhow!("Password must contain at least one number"));
     }
-    
+
     Ok(())
 }
 
