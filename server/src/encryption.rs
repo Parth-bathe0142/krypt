@@ -23,7 +23,7 @@ fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
 pub fn encrypt(plaintext: &str, password: &str, username: &str, conn: &Connection) -> Result<String> {
     let salt = get_salt(username, conn)?;
     
-    let key = derive_key(password, salt.as_bytes());
+    let key = derive_key(password, &salt);
     let cipher = Aes256Gcm::new(&key.into());
 
     let mut nonce_bytes = [0u8; 12];
@@ -34,7 +34,6 @@ pub fn encrypt(plaintext: &str, password: &str, username: &str, conn: &Connectio
         .encrypt(nonce, plaintext.as_bytes())
         .expect("encryption failed");
 
-    // Store nonce prepended to ciphertext, base64 encoded
     let mut combined = nonce_bytes.to_vec();
     combined.extend(ciphertext);
     Ok(B64.encode(combined))
@@ -43,7 +42,7 @@ pub fn encrypt(plaintext: &str, password: &str, username: &str, conn: &Connectio
 pub fn decrypt(encoded: &str, password: &str, username: &str, conn: &Connection) -> anyhow::Result<String> {
     let salt = get_salt(username, conn)?;
     
-    let key = derive_key(password, salt.as_bytes());
+    let key = derive_key(password, &salt);
     let cipher = Aes256Gcm::new(&key.into());
 
     let combined = B64.decode(encoded)?;

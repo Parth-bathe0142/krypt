@@ -72,7 +72,7 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
 
         let result = connection
             .execute(
-                "select name, value from Keys account_id = ?",
+                "select name, value from Keys where account_id = ?",
                 &[Value::Integer(id)],
             )?
             .rows()
@@ -126,8 +126,16 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
                     "select * from Keys where account_id = ? and name = ?",
                     &[Value::Integer(id), Value::Text(key.name)],
                 )?
-                .rows
-                .first()
+                .rows()
+                .next()
+                .inspect(|row| {
+                    println!(
+                        "Key added: for({}), {}, {}",
+                        row.get::<i32>("account_id").unwrap(),
+                        row.get::<&str>("name").unwrap(),
+                        row.get::<&str>("value").unwrap()
+                    );
+                })
                 .is_some();
 
             if new_record {
@@ -183,8 +191,16 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
                     Value::Text(encrypted),
                 ],
             )?
-            .rows
-            .first()
+            .rows()
+            .next()
+            .inspect(|row| {
+                println!(
+                    "Key added: for({}), {}, {}",
+                    row.get::<i32>("account_id").unwrap(),
+                    row.get::<&str>("name").unwrap(),
+                    row.get::<&str>("value").unwrap()
+                );
+            })
             .is_some();
 
         if new_record {
@@ -217,20 +233,18 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
             "delete from Keys where account_id = ? and name = ?",
             &[Value::Integer(id), Value::Text(key.name.clone())],
         )?;
-        
+
         let old_record = connection
             .execute(
                 "select * from Keys where account_id = ? and name = ?",
-                &[
-                    Value::Integer(id),
-                    Value::Text(key.name),
-                ],
+                &[Value::Integer(id), Value::Text(key.name.clone())],
             )?
             .rows
             .first()
             .is_some();
 
         if !old_record {
+            println!("deleted key: for({id}), {}", key.name);
             Ok(Response::builder().status(200).build())
         } else {
             Err(anyhow!("Error deleting key"))

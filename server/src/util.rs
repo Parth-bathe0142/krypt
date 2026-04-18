@@ -126,7 +126,7 @@ pub(crate) fn now() -> u64 {
         .as_secs()
 }
 
-pub(crate) fn get_salt(username: &str, conn: &Connection) -> Result<String> {
+pub(crate) fn get_salt(username: &str, conn: &Connection) -> Result<Vec<u8>> {
     Ok(conn
         .execute(
             "select salt from Accounts where username = ?",
@@ -135,7 +135,7 @@ pub(crate) fn get_salt(username: &str, conn: &Connection) -> Result<String> {
         .rows
         .first()
         .unwrap()
-        .get::<&str>(0)
-        .map(ToString::to_string)
+        .get::<&[u8]>(0)
+        .map(ToOwned::to_owned)
         .unwrap())
 }
