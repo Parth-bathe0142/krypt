@@ -5,13 +5,15 @@ use spin_sdk::{
     sqlite::Value,
 };
 
-use shared::{validate_password, validate_username};
+use shared::{
+    models::{ChangePasswordPayload, Credentials, JsonPayload},
+    validate_password, validate_username,
+};
 
 use crate::{
     encryption::{decrypt, encrypt},
-    models::{ChangePasswordPayload, Credentials, JsonPayload},
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, invalid_creds},
+    util::{get_connection, invalid_creds, Verify},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
@@ -156,7 +158,7 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
         )?;
 
         println!("User deleted: {}", creds.username);
-        
+
         Ok(Response::builder().status(200).build())
     } else {
         invalid_creds()

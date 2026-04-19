@@ -1,35 +1,35 @@
 use anyhow::{anyhow, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use spin_sdk::{
     http::Request,
 };
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize,Deserialize, Debug)]
 pub struct Key {
     pub name: String,
     pub value: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize,Deserialize, Debug)]
 pub struct KeyPayload {
     pub creds: Credentials,
     pub key: Key,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize,Deserialize, Debug)]
 pub struct ChangePasswordPayload {
     pub creds: Credentials,
     pub new_password: String,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct ChangeKeyPayload {
+#[derive(Serialize,Deserialize)]
+pub struct ChangeKeyPayload {
     pub creds: Credentials,
     pub name: String,
     pub new_value: String

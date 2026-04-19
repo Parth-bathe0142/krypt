@@ -1,5 +1,7 @@
 use anyhow::{Result, anyhow};
 
+pub mod models;
+
 pub fn validate_username(username: &str) -> Result<()> {
     if username.is_empty() {
         return Err(anyhow!("Username cannot be empty"));

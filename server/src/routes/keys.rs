@@ -5,11 +5,12 @@ use spin_sdk::{
     sqlite::Value,
 };
 
+use shared::models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload};
+
 use crate::{
     encryption::{decrypt, encrypt},
-    models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload},
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, invalid_creds},
+    util::{get_connection, invalid_creds, Verify},
 };
 
 pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse> {

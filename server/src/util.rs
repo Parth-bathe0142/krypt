@@ -42,8 +42,12 @@ pub(crate) fn get_connection() -> Result<Connection> {
     Ok(connection)
 }
 
-impl Credentials {
-    pub fn verify(&self, conn: &Connection) -> anyhow::Result<Option<i64>> {
+pub trait Verify {
+    fn verify(&self, conn: &Connection) -> anyhow::Result<Option<i64>>;
+}
+
+impl Verify for shared::models::Credentials {
+    fn verify(&self, conn: &Connection) -> anyhow::Result<Option<i64>> {
         let rows = conn.execute(
             "select pass_hash, id from Accounts where username = ?",
             &[Value::Text(self.username.clone())],
