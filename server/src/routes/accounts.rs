@@ -5,11 +5,13 @@ use spin_sdk::{
     sqlite::Value,
 };
 
+use shared::{validate_password, validate_username};
+
 use crate::{
     encryption::{decrypt, encrypt},
     models::{ChangePasswordPayload, Credentials, JsonPayload},
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, invalid_creds, validate_password, validate_username},
+    util::{get_connection, invalid_creds},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {

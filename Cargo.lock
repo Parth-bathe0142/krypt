@@ -1080,6 +1080,7 @@ dependencies = [
  "bcrypt",
  "serde",
  "serde_json",
+ "shared",
  "spin-sdk",
 ]
 
@@ -1629,6 +1630,13 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
