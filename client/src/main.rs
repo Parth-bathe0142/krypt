@@ -1,7 +1,8 @@
+use anyhow::Result;
 use clap::{Arg, ArgAction, Command};
 use krypt::run;
 
-fn main() {
+fn main() -> Result<()> {
     let command = Command::new("krypt")
         .about("An simple online keyring for storing credentials accessible on multiple devices throught the cli")
         .author("Parth-Bathe0142 <parth.bathe0142@gmail.com>")
@@ -35,7 +36,8 @@ fn main() {
                         .long("password")
                         .required(true)
                 )
-        ).subcommand(
+        ).subcommand(Command::new("logout"))
+        .subcommand(
             Command::new("chpassword")
                 .arg(
                     Arg::new("old")
@@ -49,7 +51,6 @@ fn main() {
                 .arg(
                     Arg::new("name")
                         .index(1)
-                        .required(true)
                         .conflicts_with("all")
                         .help("The name of the key")
                 ).arg(
@@ -94,7 +95,9 @@ fn main() {
                         .required(true)
                         .help("The name of the key to delete")
                 )
+                .subcommand(Command::new("account"))
+                .args_conflicts_with_subcommands(true)
         );
-    
-    run(command);
+
+    run(command)
 }

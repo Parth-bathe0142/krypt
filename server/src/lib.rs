@@ -4,7 +4,7 @@ use spin_sdk::http_component;
 
 use crate::routes::{
     change_key, change_password, create_account, delete_account, delete_key, get_key, list_keys,
-    set_key,
+    login, set_key,
 };
 use crate::util::pong;
 
@@ -18,6 +18,7 @@ fn handle_request(req: Request) -> anyhow::Result<impl IntoResponse> {
     let mut router = Router::new();
     router.get("/ping", pong);
 
+    router.get("/account", login);
     router.post("/account", create_account);
     router.put("/account", change_password);
     router.delete("/account", delete_account);

@@ -7,8 +7,6 @@ use spin_sdk::{
     sqlite::Connection,
 };
 
-use crate::models::Credentials;
-
 pub(crate) fn pong(_: Request, _: Params) -> Result<Response> {
     Ok(Response::builder()
         .status(200)

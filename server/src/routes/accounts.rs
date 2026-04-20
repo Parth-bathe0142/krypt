@@ -66,6 +66,19 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
     }
 }
 
+pub(crate) fn login(req: Request, _params: Params) -> Result<impl IntoResponse> {
+    let connection =
+        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+
+    let creds = Credentials::from_request(req)?;
+
+    if let Some(_) = creds.verify(&connection)? {
+        Ok(Response::builder().status(302).build())
+    } else {
+        Ok(Response::builder().status(401).build())
+    }
+}
+
 pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl IntoResponse> {
     let connection =
         get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
