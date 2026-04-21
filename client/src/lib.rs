@@ -2,18 +2,21 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use clap::{ArgMatches, Command};
+use serde::Deserialize;
 use shared::{
-    models::{ChangePasswordPayload, Credentials},
+    models::{ChangeKeyPayload, ChangePasswordPayload, Credentials, Key, KeyPayload},
     validate_password, validate_username,
 };
 
 use crate::{
-    config::{clear_username, get_username, set_username},
-    keyring::{clear_password, get_password, save},
+    config::{clear_username, set_username},
+    keyring::{clear_password, save},
+    util::{try_or_read_password, try_or_read_username},
 };
 
 mod config;
 mod keyring;
+mod util;
 
 pub fn run(command: Command) -> Result<()> {
     let matches = command.get_matches();
@@ -168,22 +171,7 @@ fn change_password(matches: &ArgMatches) -> Result<()> {
         .ok_or_else(|| anyhow!("New password required"))?
         .to_owned();
 
-    let username = match get_username() {
-        Ok(username) => username,
-        Err(err) => {
-            println!("Error fetching username from config: {err}");
-            print!("\nEnter username manually: ");
-
-            let mut username = String::new();
-            stdin.read_line(&mut username)?;
-
-            username
-                .split_whitespace()
-                .next()
-                .ok_or_else(|| anyhow!("Username cannot be empty"))?
-                .to_owned()
-        }
-    };
+    let username = try_or_read_username(&stdin)?;
 
     let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
 
@@ -222,38 +210,8 @@ fn change_password(matches: &ArgMatches) -> Result<()> {
 fn delete_account(_matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
-    let (username, found) = match get_username() {
-        Ok(username) => (username, true),
-        Err(err) => {
-            println!("Error fetching username from config: {err}");
-            print!("\nEnter username manually: ");
-
-            let mut username = String::new();
-            stdin.read_line(&mut username)?;
-
-            let username = username
-                .split_whitespace()
-                .next()
-                .ok_or_else(|| anyhow!("Username cannot be empty"))?
-                .to_owned();
-
-            (username, false)
-        }
-    };
-
-    let password = if found {
-        get_password(&username)?
-    } else {
-        let mut password = String::new();
-        stdin.read_line(&mut password)?;
-
-        print!("Enter password: ");
-        password
-            .split_whitespace()
-            .next()
-            .ok_or_else(|| anyhow!("Username cannot be empty"))?
-            .to_owned()
-    };
+    let username = try_or_read_username(&stdin)?;
+    let password = try_or_read_password(&username, &stdin)?;
 
     let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
 
@@ -289,21 +247,226 @@ fn delete_account(_matches: &ArgMatches) -> Result<()> {
 }
 
 fn get_key(matches: &ArgMatches) -> Result<()> {
+    let stdin = std::io::stdin();
+
+    let username = try_or_read_username(&stdin)?;
+    let password = try_or_read_password(&username, &stdin)?;
+
+    let key = matches
+        .get_one::<String>("name")
+        .ok_or_else(|| anyhow!("no key name provided"))?;
+
+    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+
+    let body = KeyPayload {
+        creds: Credentials {
+            username: username.clone(),
+            password,
+        },
+        key: Key {
+            name: key.clone(),
+            value: None,
+        },
+    };
+
+    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?
+        .get(url + "/key")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()?;
+
+    let value = response
+        .text()
+        .map_err(|_| anyhow!("empty response body"))?;
+
+    println!("{key} = {value}");
+
     Ok(())
 }
 
-fn get_all_keys(matches: &ArgMatches) -> Result<()> {
+fn get_all_keys(_matches: &ArgMatches) -> Result<()> {
+    let stdin = std::io::stdin();
+
+    let username = try_or_read_username(&stdin)?;
+    let password = try_or_read_password(&username, &stdin)?;
+
+    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+
+    let body = Credentials {
+        username: username.clone(),
+        password,
+    };
+
+    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?
+        .get(url + "/key")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()?;
+
+    #[derive(Deserialize)]
+    struct Entry {
+        name: String,
+        value: String,
+    }
+
+    let entries = response
+        .json::<Vec<Entry>>()
+        .map_err(|_| anyhow!("empty response body"))?;
+
+    for entry in entries {
+        println!("{} = {}", entry.name, entry.value);
+    }
+
     Ok(())
 }
 
 fn set_key(matches: &ArgMatches) -> Result<()> {
+    let stdin = std::io::stdin();
+
+    let username = try_or_read_username(&stdin)?;
+    let password = try_or_read_password(&username, &stdin)?;
+
+    let key = matches
+        .get_one::<String>("name")
+        .ok_or_else(|| anyhow!("no key name provided"))?;
+
+    let value = matches
+        .get_one::<String>("value")
+        .ok_or_else(|| anyhow!("no value provided"))?;
+
+    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+
+    let body = KeyPayload {
+        creds: Credentials {
+            username: username.clone(),
+            password,
+        },
+        key: Key {
+            name: key.clone(),
+            value: Some(value.clone()),
+        },
+    };
+
+    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?
+        .post(url + "/key")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()?;
+
+    if response.status() == 201 {
+        println!("Key saved successfully");
+    } else {
+        let status = response.status();
+        let text = response
+            .text()
+            .unwrap_or_else(|_| "unknown error".to_string());
+        println!("Error {}: {}", status, text);
+    }
+
     Ok(())
 }
 
 fn change_key(matches: &ArgMatches) -> Result<()> {
+    let stdin = std::io::stdin();
+
+    let username = try_or_read_username(&stdin)?;
+    let password = try_or_read_password(&username, &stdin)?;
+
+    let key = matches
+        .get_one::<String>("name")
+        .ok_or_else(|| anyhow!("no key name provided"))?;
+
+    let value = matches
+        .get_one::<String>("new-value")
+        .ok_or_else(|| anyhow!("no value provided"))?;
+
+    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+
+    let body = ChangeKeyPayload {
+        creds: Credentials {
+            username: username.clone(),
+            password,
+        },
+        name: key.clone(),
+        new_value: value.clone(),
+    };
+
+    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?
+        .put(url + "/key")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()?;
+
+    if response.status() == 201 {
+        println!("Key changed successfully");
+    } else {
+        let status = response.status();
+        let text = response
+            .text()
+            .unwrap_or_else(|_| "unknown error".to_string());
+        println!("Error {}: {}", status, text);
+    }
     Ok(())
 }
 
 fn delete_key(matches: &ArgMatches) -> Result<()> {
+    let stdin = std::io::stdin();
+
+    let username = try_or_read_username(&stdin)?;
+    let password = try_or_read_password(&username, &stdin)?;
+
+    let key = matches
+        .get_one::<String>("name")
+        .ok_or_else(|| anyhow!("no key name provided"))?;
+
+    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+
+    let body = KeyPayload {
+        creds: Credentials {
+            username: username.clone(),
+            password,
+        },
+        key: Key {
+            name: key.clone(),
+            value: None,
+        },
+    };
+
+    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?
+        .delete(url + "/key")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()?;
+
+    if response.status() == 200 {
+        println!("Key deleted successfully");
+    } else {
+        let status = response.status();
+        let text = response
+            .text()
+            .unwrap_or_else(|_| "unknown error".to_string());
+        println!("Error {}: {}", status, text);
+    }
+
     Ok(())
 }
