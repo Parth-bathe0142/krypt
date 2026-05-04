@@ -10,6 +10,8 @@ use spin_sdk::{
     sqlite::Connection,
 };
 
+use crate::log;
+
 pub(crate) fn pong(_: Request, _: Params) -> Result<Response> {
     Ok(Response::builder()
         .status(200)
@@ -17,7 +19,7 @@ pub(crate) fn pong(_: Request, _: Params) -> Result<Response> {
         .build())
 }
 
-pub(crate) fn get_connection() -> Result<Connection> {
+fn connection() -> Result<Connection> {
     let connection = Connection::open("default")?;
 
     connection.execute(
@@ -32,7 +34,7 @@ pub(crate) fn get_connection() -> Result<Connection> {
 
     connection.execute(
         "create table if not exists Keys (
-            account_id integer references Accounts(id),
+            account_id integer references Accounts(id) ON DELETE CASCADE,
             name text,
             value text,
             primary key(account_id, name)
@@ -41,6 +43,13 @@ pub(crate) fn get_connection() -> Result<Connection> {
     )?;
 
     Ok(connection)
+}
+
+pub fn get_connection() -> Result<Connection> {
+    connection().map_err(|err| {
+        log::error(&format!("Could not connect to the database: {}", err));
+        anyhow!("Could not connect to the database: {}", err)
+    })
 }
 
 pub trait Verify {
@@ -148,8 +157,4 @@ pub(crate) fn int(num: i64) -> Value {
 
 pub(crate) fn text(str: &str) -> Value {
     Value::Text(str.to_owned())
-}
-
-pub(crate) fn blob(blob: &[u8]) -> Value {
-    Value::Blob(blob.to_owned())
 }

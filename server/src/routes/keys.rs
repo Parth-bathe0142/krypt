@@ -8,17 +8,18 @@ use shared::models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload};
 
 use crate::{
     encryption::{decrypt, encrypt},
+    log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
     util::{get_connection, int, invalid_creds, rate_limit_response, text, FromHeader, Verify},
 };
 
 pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let KeyPayload { creds, key } = KeyPayload::from_header(&req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
+        log::warn(&format!("Too many requests for {}", creds.username));
         return rate_limit_response();
     }
 
@@ -34,12 +35,12 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 
         let value = rows
             .first()
-            .ok_or(anyhow!("key not present"))?
+            .ok_or_else(|| anyhow!("key not present"))?
             .get::<&str>(0)
             .to_owned()
             .unwrap();
 
-        let value = decrypt(&value, &creds.password, &creds.username, &connection)?;
+        let value = decrypt(value, &creds.password, &creds.username, &connection)?;
 
         Ok(Response::builder()
             .status(200)
@@ -52,8 +53,7 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 }
 
 pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let creds = Credentials::from_header(&req)?;
 
@@ -81,12 +81,12 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
 }
 
 pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
+        log::warn(&format!("Too many requests for {}", creds.username));
         return rate_limit_response();
     }
 
@@ -107,19 +107,12 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
                 )?
                 .rows()
                 .next()
-                .inspect(|row| {
-                    println!(
-                        "Key added: for({}), {}, {}",
-                        row.get::<i32>("account_id").unwrap(),
-                        row.get::<&str>("name").unwrap(),
-                        row.get::<&str>("value").unwrap()
-                    );
-                })
                 .is_some();
 
             if new_record {
                 Ok(Response::builder().status(201).build())
             } else {
+                log::error(&format!("Failed to save key for {}", id));
                 Err(anyhow!("Error saving key"))
             }
         } else {
@@ -131,8 +124,7 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 }
 
 pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let ChangeKeyPayload {
         creds,
@@ -141,6 +133,7 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
     } = ChangeKeyPayload::from_request(req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
+        log::warn(&format!("Too many requests for {}", creds.username));
         return rate_limit_response();
     }
 
@@ -151,21 +144,13 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
 
         connection.execute(
             "update Keys set value = ? where account_id = ? and name = ?",
-            &[
-                text(&encrypted),
-                int(id),
-                text(&name),
-            ],
+            &[text(&encrypted), int(id), text(&name)],
         )?;
 
         let new_record = connection
             .execute(
                 "select * from Keys where account_id = ? and name = ? and value = ?",
-                &[
-                    int(id),
-                    text(&name),
-                    text(&encrypted),
-                ],
+                &[int(id), text(&name), text(&encrypted)],
             )?
             .rows()
             .next()
@@ -182,12 +167,12 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
 }
 
 pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let KeyPayload { creds, key } = KeyPayload::from_header(&req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
+        log::warn(&format!("Too many requests for {}", creds.username));
         return rate_limit_response();
     }
 
@@ -209,7 +194,6 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
             .is_some();
 
         if !old_record {
-            println!("deleted key: for({id}), {}", key.name);
             Ok(Response::builder().status(200).build())
         } else {
             Err(anyhow!("Error deleting key"))

@@ -1,8 +1,6 @@
 use anyhow::{anyhow, Result};
 use bcrypt::{hash, DEFAULT_COST};
-use spin_sdk::{
-    http::{IntoResponse, Params, Request, Response},
-};
+use spin_sdk::http::{IntoResponse, Params, Request, Response};
 
 use shared::{
     models::{ChangePasswordPayload, Credentials, JsonPayload},
@@ -11,16 +9,16 @@ use shared::{
 
 use crate::{
     encryption::{decrypt, encrypt},
+    log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{FromHeader, Verify, get_connection, int, invalid_creds, rate_limit_response, text},
+    util::{get_connection, int, invalid_creds, rate_limit_response, text, FromHeader, Verify},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let creds = Credentials::from_request(req)?;
-    
+
     validate_username(&creds.username)?;
     validate_password(&creds.password)?;
 
@@ -44,17 +42,30 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
             &[text(&creds.username), text(&hash)],
         )?;
 
+        let id = connection
+            .execute(
+                "select id from Accounts where username = ?",
+                &[text(&creds.username)],
+            )?
+            .rows()
+            .next()
+            .ok_or_else(|| anyhow!("failed to insert new account"))?
+            .get::<i64>("id")
+            .unwrap();
+
+        log::info(&format!("Account created, id: {}", id));
+
         Ok(Response::builder().status(201).build())
     }
 }
 
 pub(crate) fn login(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let creds = Credentials::from_request(req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
+        log::warn(&format!("Too many requests for {}", creds.username));
         return rate_limit_response();
     }
 
@@ -67,8 +78,7 @@ pub(crate) fn login(req: Request, _params: Params) -> Result<impl IntoResponse> 
 }
 
 pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let ChangePasswordPayload {
         creds,
@@ -76,6 +86,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
     } = ChangePasswordPayload::from_request(req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
+        log::warn(&format!("Too many requests for {}", creds.username));
         return rate_limit_response();
     }
 
@@ -108,11 +119,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
 
             connection.execute(
                 "update Keys set value = ? where account_id = ? and name = ?",
-                &[
-                    text(&re_encrypted),
-                    int(id),
-                    text(&name),
-                ],
+                &[text(&re_encrypted), int(id), text(&name)],
             )?;
         }
 
@@ -129,8 +136,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
 }
 
 pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let connection =
-        get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
+    let connection = get_connection()?;
 
     let creds = Credentials::from_header(&req)?;
 
@@ -142,16 +148,11 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
         clear_rate_limit(&creds.username)?;
 
         connection.execute(
-            "delete from Keys where account_id = ?",
-            &[int(id)],
-        )?;
-        
-        connection.execute(
             "delete from Accounts where username = ?",
             &[text(&creds.username)],
         )?;
 
-        println!("User deleted: {}", creds.username);
+        log::info(&format!("Account deleted, id: {}", id));
 
         Ok(Response::builder().status(200).build())
     } else {
