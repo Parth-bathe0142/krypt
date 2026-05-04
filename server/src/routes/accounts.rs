@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use bcrypt::{hash, DEFAULT_COST};
 use spin_sdk::{
     http::{IntoResponse, Params, Request, Response},
-    sqlite::Value,
 };
 
 use shared::{
@@ -13,7 +12,7 @@ use shared::{
 use crate::{
     encryption::{decrypt, encrypt},
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, invalid_creds, FromHeader, Verify},
+    util::{FromHeader, Verify, get_connection, int, invalid_creds, rate_limit_response, text},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
@@ -21,16 +20,16 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
         get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
     let creds = Credentials::from_request(req)?;
+    
+    validate_username(&creds.username)?;
+    validate_password(&creds.password)?;
 
     let rows = connection
         .execute(
             "select id from Accounts where username = ?",
-            &[Value::Text(creds.username.clone())],
+            &[text(&creds.username)],
         )?
         .rows;
-
-    validate_username(&creds.username)?;
-    validate_password(&creds.password)?;
 
     if rows.first().is_some() {
         Ok(Response::builder()
@@ -42,25 +41,8 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 
         connection.execute(
             "insert into Accounts (username, pass_hash) values (?, ?)",
-            &[Value::Text(creds.username.clone()), Value::Text(hash)],
+            &[text(&creds.username), text(&hash)],
         )?;
-
-        connection
-            .execute(
-                "select id, username, pass_hash, salt from Accounts where username = ?",
-                &[Value::Text(creds.username)],
-            )?
-            .rows()
-            .next()
-            .map(|row| {
-                (
-                    row.get::<i32>("id").unwrap(),
-                    row.get::<&str>("username").unwrap(),
-                    row.get::<&str>("pass_hash").unwrap(),
-                    row.get::<&[u8]>("salt").unwrap(),
-                )
-            })
-            .inspect(|(id, user, pass, salt)| println!("New user: {id}, {user}, {pass}, {salt:?}"));
 
         Ok(Response::builder().status(201).build())
     }
@@ -72,7 +54,12 @@ pub(crate) fn login(req: Request, _params: Params) -> Result<impl IntoResponse> 
 
     let creds = Credentials::from_request(req)?;
 
+    if let Err(_) = check_rate_limit(&creds.username) {
+        return rate_limit_response();
+    }
+
     if let Some(_) = creds.verify(&connection)? {
+        clear_rate_limit(&creds.username)?;
         Ok(Response::builder().status(302).build())
     } else {
         Ok(Response::builder().status(401).build())
@@ -89,13 +76,10 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
     } = ChangePasswordPayload::from_request(req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
-        return Ok(Response::builder()
-            .status(429)
-            .body("Too many attempts, try again later")
-            .build());
+        return rate_limit_response();
     }
 
-    validate_password(&creds.password)?;
+    validate_password(&new_password)?;
 
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
@@ -103,7 +87,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
         let rows = connection
             .execute(
                 "select name, value from Keys where account_id = ?",
-                &[Value::Integer(id)],
+                &[int(id)],
             )?
             .rows;
 
@@ -125,9 +109,9 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
             connection.execute(
                 "update Keys set value = ? where account_id = ? and name = ?",
                 &[
-                    Value::Text(re_encrypted),
-                    Value::Integer(id),
-                    Value::Text(name),
+                    text(&re_encrypted),
+                    int(id),
+                    text(&name),
                 ],
             )?;
         }
@@ -135,7 +119,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
         let hash = hash(new_password, DEFAULT_COST)?;
         connection.execute(
             "update Accounts set pass_hash = ? where username = ?",
-            &[Value::Text(hash), Value::Text(creds.username)],
+            &[text(&hash), text(&creds.username)],
         )?;
 
         Ok(Response::builder().status(200).build())
@@ -151,23 +135,20 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
     let creds = Credentials::from_header(&req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
-        return Ok(Response::builder()
-            .status(429)
-            .body("Too many attempts, try again later")
-            .build());
+        return rate_limit_response();
     }
 
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
 
         connection.execute(
-            "delete from Accounts where username = ?",
-            &[Value::Text(creds.username.clone())],
-        )?;
-
-        connection.execute(
             "delete from Keys where account_id = ?",
-            &[Value::Integer(id)],
+            &[int(id)],
+        )?;
+        
+        connection.execute(
+            "delete from Accounts where username = ?",
+            &[text(&creds.username)],
         )?;
 
         println!("User deleted: {}", creds.username);

@@ -51,7 +51,7 @@ impl Verify for shared::models::Credentials {
     fn verify(&self, conn: &Connection) -> anyhow::Result<Option<i64>> {
         let rows = conn.execute(
             "select pass_hash, id from Accounts where username = ?",
-            &[Value::Text(self.username.clone())],
+            &[text(&self.username)],
         )?;
 
         let Some(row) = rows.rows.first() else {
@@ -75,6 +75,14 @@ pub(crate) fn invalid_creds() -> Result<Response> {
         .build())
 }
 
+#[inline]
+pub(crate) fn rate_limit_response() -> Result<Response> {
+    Ok(Response::builder()
+        .status(429)
+        .body("Too many attempts, try again later")
+        .build())
+}
+
 pub(crate) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -86,7 +94,7 @@ pub(crate) fn get_salt(username: &str, conn: &Connection) -> Result<Vec<u8>> {
     Ok(conn
         .execute(
             "select salt from Accounts where username = ?",
-            &[Value::Text(username.to_owned())],
+            &[text(username)],
         )?
         .rows
         .first()
@@ -132,4 +140,16 @@ impl FromHeader for KeyPayload {
             },
         })
     }
+}
+
+pub(crate) fn int(num: i64) -> Value {
+    Value::Integer(num)
+}
+
+pub(crate) fn text(str: &str) -> Value {
+    Value::Text(str.to_owned())
+}
+
+pub(crate) fn blob(blob: &[u8]) -> Value {
+    Value::Blob(blob.to_owned())
 }
