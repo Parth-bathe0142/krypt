@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{Ok, Result};
+use http::StatusCode;
 use spin_sdk::{
     http::{IntoResponse, Params, Request, Response},
-    sqlite::Value,
 };
 
 use shared::models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload};
@@ -33,20 +33,20 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
             )?
             .rows;
 
-        let value = rows
-            .first()
-            .ok_or_else(|| anyhow!("key not present"))?
-            .get::<&str>(0)
-            .to_owned()
-            .unwrap();
+        let value = rows.first();
 
-        let value = decrypt(value, &creds.password, &creds.username, &connection)?;
+        if value.is_some() {
+            let value = value.unwrap().get::<&str>(0).to_owned().unwrap();
+            let value = decrypt(value, &creds.password, &creds.username, &connection)?;
 
-        Ok(Response::builder()
-            .status(200)
-            .header("Content-Type", "text")
-            .body(value)
-            .build())
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text")
+                .body(value)
+                .build())
+        } else {
+            Ok(Response::builder().status(StatusCode::NOT_FOUND).build())
+        }
     } else {
         invalid_creds()
     }
@@ -70,11 +70,15 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
             .map(|row| row.get::<&str>("name").unwrap().to_owned())
             .collect::<Vec<_>>();
 
-        Ok(Response::builder()
-            .status(200)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&result)?)
-            .build())
+        if result.is_empty() {
+            Ok(Response::builder().status(StatusCode::NOT_FOUND).build())
+        } else {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .body(serde_json::to_string(&result)?)
+                .build())
+        }
     } else {
         invalid_creds()
     }
@@ -93,6 +97,15 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
 
+        if connection
+            .execute("select name from Keys where name = ?", &[text(&key.name)])?
+            .rows()
+            .next()
+            .is_some()
+        {
+            return Ok(Response::builder().status(StatusCode::CONFLICT).build());
+        }
+
         if let Some(val) = key.value {
             let encrypted = encrypt(&val, &creds.password, &creds.username, &connection)?;
             connection.execute(
@@ -100,23 +113,9 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
                 &[int(id), text(&key.name), text(&encrypted)],
             )?;
 
-            let new_record = connection
-                .execute(
-                    "select * from Keys where account_id = ? and name = ?",
-                    &[int(id), text(&key.name)],
-                )?
-                .rows()
-                .next()
-                .is_some();
-
-            if new_record {
-                Ok(Response::builder().status(201).build())
-            } else {
-                log::error(&format!("Failed to save key for {}", id));
-                Err(anyhow!("Error saving key"))
-            }
+            Ok(Response::builder().status(StatusCode::CREATED).build())
         } else {
-            Err(anyhow!("Missing key value"))
+            Ok(Response::builder().status(StatusCode::BAD_REQUEST).build())
         }
     } else {
         invalid_creds()
@@ -140,6 +139,15 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
 
+        if connection
+            .execute("select name from Keys where name = ?", &[text(&name)])?
+            .rows()
+            .next()
+            .is_none()
+        {
+            return Ok(Response::builder().status(StatusCode::NOT_FOUND).build());
+        }
+
         let encrypted = encrypt(&new_value, &creds.password, &creds.username, &connection)?;
 
         connection.execute(
@@ -147,20 +155,7 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
             &[text(&encrypted), int(id), text(&name)],
         )?;
 
-        let new_record = connection
-            .execute(
-                "select * from Keys where account_id = ? and name = ? and value = ?",
-                &[int(id), text(&name), text(&encrypted)],
-            )?
-            .rows()
-            .next()
-            .is_some();
-
-        if new_record {
-            Ok(Response::builder().status(201).build())
-        } else {
-            Err(anyhow!("Key does not exist"))
-        }
+        Ok(Response::builder().status(StatusCode::CREATED).build())
     } else {
         invalid_creds()
     }
@@ -179,25 +174,21 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
     if let Some(id) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
 
+        if connection
+            .execute("select name from Keys where name = ?", &[text(&key.name)])?
+            .rows()
+            .next()
+            .is_none()
+        {
+            return Ok(Response::builder().status(StatusCode::NOT_FOUND).build());
+        }
+
         connection.execute(
             "delete from Keys where account_id = ? and name = ?",
-            &[Value::Integer(id), Value::Text(key.name.clone())],
+            &[int(id), text(&key.name)],
         )?;
 
-        let old_record = connection
-            .execute(
-                "select * from Keys where account_id = ? and name = ?",
-                &[Value::Integer(id), Value::Text(key.name.clone())],
-            )?
-            .rows
-            .first()
-            .is_some();
-
-        if !old_record {
-            Ok(Response::builder().status(200).build())
-        } else {
-            Err(anyhow!("Error deleting key"))
-        }
+        Ok(Response::builder().status(StatusCode::OK).build())
     } else {
         invalid_creds()
     }

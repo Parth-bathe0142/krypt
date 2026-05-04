@@ -1,7 +1,6 @@
-use std::time::Duration;
-
 use anyhow::{Result, anyhow};
 use clap::{ArgMatches, Command};
+use reqwest::StatusCode;
 use shared::{
     models::{ChangeKeyPayload, ChangePasswordPayload, Credentials, Key, KeyPayload},
     validate_password, validate_username,
@@ -10,7 +9,7 @@ use shared::{
 use crate::{
     config::{clear_username, set_username},
     keyring::{clear_password, save},
-    util::{ToHeader, try_or_read_password, try_or_read_username},
+    util::{ToHeader, get_client, try_or_read_password, try_or_read_username},
 };
 
 mod config;
@@ -70,15 +69,13 @@ fn signup(matches: &ArgMatches) -> Result<()> {
 
     let body = serde_json::to_string(&body).map_err(|_| anyhow!("failed to serialize body"))?;
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .post(url + "/account")
         .header("content-type", "application/json")
         .body(body)
         .send()?;
 
-    if response.status() == 201 {
+    if response.status() == StatusCode::CREATED {
         println!("Account created successfully");
         println!("Saving credentials to keyring...");
 
@@ -93,11 +90,11 @@ fn signup(matches: &ArgMatches) -> Result<()> {
             );
             return saved;
         }
+    } else if response.status() == StatusCode::CONFLICT {
+        println!("Username already exists");
     } else {
         let status = response.status();
-        let text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
+        let text = response.text().unwrap_or_default();
         println!("Error {}: {}", status, text);
     }
 
@@ -123,15 +120,13 @@ fn login(matches: &ArgMatches) -> Result<()> {
 
     let body = serde_json::to_string(&body).map_err(|_| anyhow!("failed to serialize body"))?;
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .post(url + "/account/login")
         .header("content-type", "application/json")
         .body(body)
         .send()?;
 
-    if response.status() == 302 {
+    if response.status() == StatusCode::ACCEPTED {
         println!("Account verified successfully");
         println!("Saving credentials to keyring...");
 
@@ -146,11 +141,11 @@ fn login(matches: &ArgMatches) -> Result<()> {
             );
             return saved;
         }
+    } else if response.status() == StatusCode::UNAUTHORIZED {
+        println!("{}", response.text().unwrap_or_default());
     } else {
         let status = response.status();
-        let text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
+        let text = response.text().unwrap_or_default();
         println!("Error {}: {}", status, text);
     }
 
@@ -184,17 +179,17 @@ fn change_password(matches: &ArgMatches) -> Result<()> {
 
     let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .put(url + "/account")
         .header("content-type", "application/json")
         .body(body)
         .send()?;
 
-    if response.status() == 200 {
+    if response.status() == StatusCode::OK {
         println!("Password changed successfully");
         save(&username, &new)?;
+    } else if response.status() == StatusCode::UNAUTHORIZED {
+        println!("{}", response.text().unwrap_or_default());
     } else {
         let status = response.status();
         let text = response
@@ -221,19 +216,19 @@ fn delete_account(_matches: &ArgMatches) -> Result<()> {
 
     let headers = data.to_header();
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .delete(url + "/account")
         .header("content-type", "application/json")
         .headers(headers)
         .send()?;
 
-    if response.status() == 200 {
+    if response.status() == StatusCode::OK {
         println!("Account deleted successfully");
 
         clear_password(&username)?;
         clear_username()?;
+    } else if response.status() == StatusCode::UNAUTHORIZED {
+        println!("{}", response.text().unwrap_or_default());
     } else {
         let status = response.status();
         let text = response
@@ -270,19 +265,25 @@ fn get_key(matches: &ArgMatches) -> Result<()> {
 
     let headers = data.to_header();
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .get(url + "/key")
         .header("content-type", "application/json")
         .headers(headers)
         .send()?;
 
-    let value = response
-        .text()
-        .map_err(|_| anyhow!("empty response body"))?;
+    if response.status() == StatusCode::OK {
+        let value = response
+            .text()
+            .map_err(|_| anyhow!("empty response body"))?;
 
-    println!("{key} = {value}");
+        println!("{key} = {value}");
+    } else if response.status() == StatusCode::NOT_FOUND {
+        println!("Key '{}' not found", key);
+    } else {
+        let status = response.status();
+        let text = response.text().unwrap_or_default();
+        println!("Error {}: {}", status, text);
+    }
 
     Ok(())
 }
@@ -302,20 +303,26 @@ fn get_all_keys(_matches: &ArgMatches) -> Result<()> {
 
     let headers = data.to_header();
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .get(url + "/key/list")
         .header("content-type", "application/json")
         .headers(headers)
         .send()?;
 
-    let entries = response
-        .json::<Vec<String>>()
-        .map_err(|_| anyhow!("empty response body"))?;
+    if response.status() == StatusCode::OK {
+        let entries = response
+            .json::<Vec<String>>()
+            .map_err(|_| anyhow!("empty response body"))?;
 
-    for entry in entries {
-        println!("{}", entry);
+        for entry in entries {
+            println!("{}", entry);
+        }
+    } else if response.status() == StatusCode::NOT_FOUND {
+        println!("No keys stored");
+    } else {
+        let status = response.status();
+        let text = response.text().unwrap_or_default();
+        println!("Error {}: {}", status, text);
     }
 
     Ok(())
@@ -350,16 +357,16 @@ fn set_key(matches: &ArgMatches) -> Result<()> {
 
     let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .post(url + "/key")
         .header("content-type", "application/json")
         .body(body)
         .send()?;
 
-    if response.status() == 201 {
+    if response.status() == StatusCode::CREATED {
         println!("Key saved successfully");
+    } else if response.status() == StatusCode::CONFLICT {
+        println!("Key '{}' already exists", key);
     } else {
         let status = response.status();
         let text = response
@@ -398,16 +405,16 @@ fn change_key(matches: &ArgMatches) -> Result<()> {
 
     let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .put(url + "/key")
         .header("content-type", "application/json")
         .body(body)
         .send()?;
 
-    if response.status() == 201 {
+    if response.status() == StatusCode::CREATED {
         println!("Key changed successfully");
+    } else if response.status() == StatusCode::NOT_FOUND {
+        println!("Key '{}' not found", key);
     } else {
         let status = response.status();
         let text = response
@@ -443,15 +450,13 @@ fn delete_key(matches: &ArgMatches) -> Result<()> {
 
     let headers = data.to_header();
 
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?
+    let response = get_client()?
         .delete(url + "/key")
         .header("content-type", "application/json")
         .headers(headers)
         .send()?;
 
-    if response.status() == 200 {
+    if response.status() == StatusCode::OK {
         println!("Key deleted successfully");
     } else {
         let status = response.status();

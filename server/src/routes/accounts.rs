@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use bcrypt::{hash, DEFAULT_COST};
+use http::StatusCode;
 use spin_sdk::http::{IntoResponse, Params, Request, Response};
 
 use shared::{
@@ -31,7 +32,7 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 
     if rows.first().is_some() {
         Ok(Response::builder()
-            .status(409)
+            .status(StatusCode::CONFLICT)
             .body("username already exists")
             .build())
     } else {
@@ -55,7 +56,7 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 
         log::info(&format!("Account created, id: {}", id));
 
-        Ok(Response::builder().status(201).build())
+        Ok(Response::builder().status(StatusCode::CREATED).build())
     }
 }
 
@@ -71,9 +72,9 @@ pub(crate) fn login(req: Request, _params: Params) -> Result<impl IntoResponse> 
 
     if let Some(_) = creds.verify(&connection)? {
         clear_rate_limit(&creds.username)?;
-        Ok(Response::builder().status(302).build())
+        Ok(Response::builder().status(StatusCode::ACCEPTED).build())
     } else {
-        Ok(Response::builder().status(401).build())
+        invalid_creds()
     }
 }
 
@@ -129,7 +130,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
             &[text(&hash), text(&creds.username)],
         )?;
 
-        Ok(Response::builder().status(200).build())
+        Ok(Response::builder().status(StatusCode::OK).build())
     } else {
         invalid_creds()
     }
@@ -154,7 +155,7 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
 
         log::info(&format!("Account deleted, id: {}", id));
 
-        Ok(Response::builder().status(200).build())
+        Ok(Response::builder().status(StatusCode::OK).build())
     } else {
         invalid_creds()
     }

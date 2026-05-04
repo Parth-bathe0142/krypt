@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use bcrypt::verify;
+use http::StatusCode;
 use shared::models::Credentials;
 use shared::models::Key;
 use shared::models::KeyPayload;
@@ -14,7 +15,7 @@ use crate::log;
 
 pub(crate) fn pong(_: Request, _: Params) -> Result<Response> {
     Ok(Response::builder()
-        .status(200)
+        .status(StatusCode::OK)
         .body("pong".to_string())
         .build())
 }
@@ -79,7 +80,7 @@ impl Verify for shared::models::Credentials {
 #[inline]
 pub(crate) fn invalid_creds() -> Result<Response> {
     Ok(Response::builder()
-        .status(400)
+        .status(StatusCode::UNAUTHORIZED)
         .body("Invalid Username/Password")
         .build())
 }
@@ -87,7 +88,7 @@ pub(crate) fn invalid_creds() -> Result<Response> {
 #[inline]
 pub(crate) fn rate_limit_response() -> Result<Response> {
     Ok(Response::builder()
-        .status(429)
+        .status(StatusCode::TOO_MANY_REQUESTS)
         .body("Too many attempts, try again later")
         .build())
 }

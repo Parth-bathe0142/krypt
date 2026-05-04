@@ -1,4 +1,4 @@
-use std::io::Stdin;
+use std::{io::Stdin, time::Duration};
 
 use anyhow::{Result, anyhow};
 use reqwest::header::HeaderMap;
@@ -42,6 +42,13 @@ pub(crate) fn try_or_read_password(username: &str, stdin: &Stdin) -> Result<Stri
                 .to_owned())
         }
     }
+}
+
+pub(crate) fn get_client() -> Result<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| anyhow::anyhow!(e))
 }
 
 pub(crate) trait ToHeader {
