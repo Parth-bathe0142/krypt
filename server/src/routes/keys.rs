@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Ok, Result};
-use serde_json::json;
 use spin_sdk::{
     http::{IntoResponse, Params, Request, Response},
     sqlite::Value,
@@ -10,14 +9,14 @@ use shared::models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload};
 use crate::{
     encryption::{decrypt, encrypt},
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, invalid_creds, Verify},
+    util::{get_connection, invalid_creds, FromHeader, Verify},
 };
 
 pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse> {
     let connection =
         get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
-    let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
+    let KeyPayload { creds, key } = KeyPayload::from_header(&req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
         return Ok(Response::builder()
@@ -38,7 +37,7 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
 
         let value = rows
             .first()
-            .ok_or(anyhow!(""))?
+            .ok_or(anyhow!("key not present"))?
             .get::<&str>(0)
             .to_owned()
             .unwrap();
@@ -59,7 +58,7 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
     let connection =
         get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
-    let creds = Credentials::from_request(req)?;
+    let creds = Credentials::from_header(&req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
         return Ok(Response::builder()
@@ -73,16 +72,11 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
 
         let result = connection
             .execute(
-                "select name, value from Keys where account_id = ?",
+                "select name from Keys where account_id = ?",
                 &[Value::Integer(id)],
             )?
             .rows()
-            .map(|row| {
-                json!({
-                    "name": row.get::<&str>("name").unwrap().to_owned(),
-                    "value": row.get::<&str>("value").unwrap().to_owned(),
-                })
-            })
+            .map(|row| row.get::<&str>("name").unwrap().to_owned())
             .collect::<Vec<_>>();
 
         Ok(Response::builder()
@@ -218,7 +212,7 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
     let connection =
         get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
-    let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
+    let KeyPayload { creds, key } = KeyPayload::from_header(&req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
         return Ok(Response::builder()

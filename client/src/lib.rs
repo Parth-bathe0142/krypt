@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use clap::{ArgMatches, Command};
-use serde::Deserialize;
 use shared::{
     models::{ChangeKeyPayload, ChangePasswordPayload, Credentials, Key, KeyPayload},
     validate_password, validate_username,
@@ -11,7 +10,7 @@ use shared::{
 use crate::{
     config::{clear_username, set_username},
     keyring::{clear_password, save},
-    util::{try_or_read_password, try_or_read_username},
+    util::{ToHeader, try_or_read_password, try_or_read_username},
 };
 
 mod config;
@@ -127,7 +126,7 @@ fn login(matches: &ArgMatches) -> Result<()> {
     let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?
-        .get(url + "/account")
+        .post(url + "/account/login")
         .header("content-type", "application/json")
         .body(body)
         .send()?;
@@ -215,19 +214,19 @@ fn delete_account(_matches: &ArgMatches) -> Result<()> {
 
     let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
 
-    let body = Credentials {
+    let data = Credentials {
         username: username.clone(),
         password,
     };
 
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+    let headers = data.to_header();
 
     let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?
         .delete(url + "/account")
         .header("content-type", "application/json")
-        .body(body)
+        .headers(headers)
         .send()?;
 
     if response.status() == 200 {
@@ -258,7 +257,7 @@ fn get_key(matches: &ArgMatches) -> Result<()> {
 
     let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
 
-    let body = KeyPayload {
+    let data = KeyPayload {
         creds: Credentials {
             username: username.clone(),
             password,
@@ -269,14 +268,14 @@ fn get_key(matches: &ArgMatches) -> Result<()> {
         },
     };
 
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+    let headers = data.to_header();
 
     let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?
         .get(url + "/key")
         .header("content-type", "application/json")
-        .body(body)
+        .headers(headers)
         .send()?;
 
     let value = response
@@ -296,33 +295,27 @@ fn get_all_keys(_matches: &ArgMatches) -> Result<()> {
 
     let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
 
-    let body = Credentials {
+    let data = Credentials {
         username: username.clone(),
         password,
     };
 
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+    let headers = data.to_header();
 
     let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?
-        .get(url + "/key")
+        .get(url + "/key/list")
         .header("content-type", "application/json")
-        .body(body)
+        .headers(headers)
         .send()?;
 
-    #[derive(Deserialize)]
-    struct Entry {
-        name: String,
-        value: String,
-    }
-
     let entries = response
-        .json::<Vec<Entry>>()
+        .json::<Vec<String>>()
         .map_err(|_| anyhow!("empty response body"))?;
 
     for entry in entries {
-        println!("{} = {}", entry.name, entry.value);
+        println!("{}", entry);
     }
 
     Ok(())
@@ -437,7 +430,7 @@ fn delete_key(matches: &ArgMatches) -> Result<()> {
 
     let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
 
-    let body = KeyPayload {
+    let data = KeyPayload {
         creds: Credentials {
             username: username.clone(),
             password,
@@ -448,14 +441,14 @@ fn delete_key(matches: &ArgMatches) -> Result<()> {
         },
     };
 
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+    let headers = data.to_header();
 
     let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?
         .delete(url + "/key")
         .header("content-type", "application/json")
-        .body(body)
+        .headers(headers)
         .send()?;
 
     if response.status() == 200 {

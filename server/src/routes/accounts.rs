@@ -13,7 +13,7 @@ use shared::{
 use crate::{
     encryption::{decrypt, encrypt},
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, invalid_creds, Verify},
+    util::{get_connection, invalid_creds, FromHeader, Verify},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
@@ -148,7 +148,7 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
     let connection =
         get_connection().map_err(|err| anyhow!("Could not connect to the database: {}", err))?;
 
-    let creds = Credentials::from_request(req)?;
+    let creds = Credentials::from_header(&req)?;
 
     if let Err(_) = check_rate_limit(&creds.username) {
         return Ok(Response::builder()

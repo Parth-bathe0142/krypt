@@ -3,7 +3,7 @@ fn main() {
 
     let server_url = match profile.as_str() {
         "release" => "https://krypt-server-mdkb4odz.fermyon.app",
-        _ => "http://localhost:8080",
+        _ => "http://localhost:3000",
     };
 
     println!("cargo:rustc-env=SERVER_URL={}", server_url);

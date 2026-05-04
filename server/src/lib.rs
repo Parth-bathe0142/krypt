@@ -18,7 +18,7 @@ fn handle_request(req: Request) -> anyhow::Result<impl IntoResponse> {
     let mut router = Router::new();
     router.get("/ping", pong);
 
-    router.get("/account", login);
+    router.post("/account/login", login);
     router.post("/account", create_account);
     router.put("/account", change_password);
     router.delete("/account", delete_account);

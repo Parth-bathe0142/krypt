@@ -1,6 +1,9 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use bcrypt::verify;
+use shared::models::Credentials;
+use shared::models::Key;
+use shared::models::KeyPayload;
 use spin_sdk::sqlite::Value;
 use spin_sdk::{
     http::{Params, Request, Response},
@@ -91,4 +94,42 @@ pub(crate) fn get_salt(username: &str, conn: &Connection) -> Result<Vec<u8>> {
         .get::<&[u8]>(0)
         .map(ToOwned::to_owned)
         .unwrap())
+}
+
+pub trait FromHeader: Sized {
+    fn from_header(request: &Request) -> Result<Self>;
+}
+
+fn get_header(request: &Request, name: &str) -> Result<String> {
+    request
+        .header(name)
+        .ok_or_else(|| anyhow!("Missing {} in header", name))?
+        .as_str()
+        .ok_or_else(|| anyhow!("Failed to parse header {}", name))
+        .map(|s| s.to_owned())
+}
+
+impl FromHeader for Credentials {
+    fn from_header(request: &Request) -> Result<Self> {
+        let username = get_header(request, "username")?;
+        let password = get_header(request, "password")?;
+
+        Ok(Self { username, password })
+    }
+}
+
+impl FromHeader for KeyPayload {
+    fn from_header(request: &Request) -> Result<Self> {
+        let username = get_header(request, "username")?;
+        let password = get_header(request, "password")?;
+        let key = get_header(request, "key")?;
+
+        Ok(Self {
+            creds: Credentials { username, password },
+            key: Key {
+                name: key,
+                value: None,
+            },
+        })
+    }
 }
