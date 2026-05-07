@@ -1,13 +1,14 @@
 use anyhow::{Result, anyhow};
 use clap::Command;
 
-use crate::{
-    routes::{change_password, delete_account, login, signup, get_key, get_all_keys, set_key, change_key, delete_key},
+use crate::routes::{
+    change_key, change_password, delete_account, delete_key, get_all_keys, get_key, login, set_key,
+    signup,
 };
 
-mod routes;
 mod config;
 mod keyring;
+mod routes;
 mod util;
 
 pub fn run(command: Command) -> Result<()> {
@@ -31,4 +32,3 @@ pub fn run(command: Command) -> Result<()> {
         _ => Err(anyhow!("unknown sub command")),
     }
 }
-

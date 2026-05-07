@@ -7,8 +7,7 @@ use argon2::Argon2;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use spin_sdk::sqlite::Connection;
 
-use crate::log;
-use crate::util::get_salt;
+use crate::{log, util::text};
 
 fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
     let mut key = [0u8; 32];
@@ -21,6 +20,20 @@ fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
         })?;
 
     Ok(key)
+}
+
+ fn get_salt(username: &str, conn: &Connection) -> Result<Vec<u8>> {
+    Ok(conn
+        .execute(
+            "select salt from Accounts where username = ?",
+            &[text(username)],
+        )?
+        .rows
+        .first()
+        .unwrap()
+        .get::<&[u8]>(0)
+        .map(ToOwned::to_owned)
+        .unwrap())
 }
 
 pub fn encrypt(

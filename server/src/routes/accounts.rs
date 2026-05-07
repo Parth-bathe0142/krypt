@@ -12,7 +12,8 @@ use crate::{
     encryption::{decrypt, encrypt},
     log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, int, invalid_creds, rate_limit_response, text, FromHeader, Verify},
+    routes::responses::{created_response, invalid_creds, ok_response, rate_limit_response},
+    util::{get_connection, int, text, FromHeader, Verify},
 };
 
 pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoResponse> {
@@ -56,7 +57,7 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 
         log::info(&format!("Account created, id: {}", id));
 
-        Ok(Response::builder().status(StatusCode::CREATED).build())
+        created_response()
     }
 }
 
@@ -130,7 +131,7 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
             &[text(&hash), text(&creds.username)],
         )?;
 
-        Ok(Response::builder().status(StatusCode::OK).build())
+        ok_response()
     } else {
         invalid_creds()
     }
@@ -155,7 +156,7 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
 
         log::info(&format!("Account deleted, id: {}", id));
 
-        Ok(Response::builder().status(StatusCode::OK).build())
+        ok_response()
     } else {
         invalid_creds()
     }

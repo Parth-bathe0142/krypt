@@ -9,11 +9,21 @@ pub struct Credentials {
     pub username: String,
     pub password: String,
 }
+impl Credentials {
+    pub fn new(username: String, password: String) -> Self {
+        Self { username, password }
+    }
+}
 
 #[derive(Serialize,Deserialize, Debug)]
 pub struct Key {
     pub name: String,
     pub value: Option<String>,
+}
+impl Key {
+    pub fn new(name: String, value: Option<String>) -> Self {
+        Self { name, value }
+    }
 }
 
 #[derive(Serialize,Deserialize, Debug)]
@@ -21,11 +31,21 @@ pub struct KeyPayload {
     pub creds: Credentials,
     pub key: Key,
 }
+impl KeyPayload {
+    pub fn new(creds: Credentials, key: Key) -> Self {
+        Self { creds, key }
+    }
+}
 
 #[derive(Serialize,Deserialize, Debug)]
 pub struct ChangePasswordPayload {
     pub creds: Credentials,
     pub new_password: String,
+}
+impl ChangePasswordPayload {
+    pub fn new(creds: Credentials, new_password: String) -> Self {
+        Self { creds, new_password }
+    }
 }
 
 #[derive(Serialize,Deserialize)]
@@ -33,6 +53,11 @@ pub struct ChangeKeyPayload {
     pub creds: Credentials,
     pub name: String,
     pub new_value: String
+}
+impl ChangeKeyPayload {
+    pub fn new(creds: Credentials, name: String, new_value: String) -> Self {
+        Self { creds, name, new_value }
+    }
 }
 
 pub trait JsonPayload: for<'a> Deserialize<'a> {
@@ -54,3 +79,11 @@ pub trait JsonPayload: for<'a> Deserialize<'a> {
     }
 }
 impl<T: for<'a> Deserialize<'a>> JsonPayload for T {}
+
+pub trait ToJson: Serialize {
+    fn to_json_string(&self) -> Result<String> {
+        serde_json::to_string(self)
+            .map_err(|_| anyhow!("Could not serialize to JSON".to_string()))
+    }
+}
+impl<T: Serialize> ToJson for T {}

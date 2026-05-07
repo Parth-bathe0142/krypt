@@ -1,19 +1,24 @@
 use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use reqwest::StatusCode;
-use shared::{models::{ChangePasswordPayload, Credentials}, validate_password, validate_username};
+use shared::{
+    models::{ChangePasswordPayload, Credentials, ToJson},
+    validate_password, validate_username,
+};
 
-use crate::{config::{clear_username, set_username}, keyring::{clear_password, save}, util::{ToHeader, get_client, try_or_read_password, try_or_read_username}};
+use crate::{
+    config::{clear_username, set_username},
+    keyring::{clear_password, save},
+    util::{
+        ToHeader, get_client, get_url, handle_unknown_response, prompt, try_or_read_password,
+        try_or_read_username,
+    },
+};
 
 pub fn signup(_matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
-    let mut username = String::new();
-    print!("Enter username: ");
-    stdin
-        .read_line(&mut username)
-        .map_err(|_| anyhow!("failed to read username"))?;
-    let username = username.trim().to_owned();
+    let username = prompt("Enter username", &stdin)?;
 
     let password = rpassword::prompt_password("Enter Password: ")?;
     let confirm = rpassword::prompt_password("Confirm Password: ")?;
@@ -24,13 +29,8 @@ pub fn signup(_matches: &ArgMatches) -> Result<()> {
     validate_username(&username)?;
     validate_password(&password)?;
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
-    let body = Credentials {
-        username: username.clone(),
-        password: password.clone(),
-    };
-
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("failed to serialize body"))?;
+    let url = get_url();
+    let body = Credentials::new(username.clone(), password.clone()).to_json_string()?;
 
     let response = get_client()?
         .post(url + "/account")
@@ -56,9 +56,7 @@ pub fn signup(_matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::CONFLICT {
         println!("Username already exists");
     } else {
-        let status = response.status();
-        let text = response.text().unwrap_or_default();
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
 
     Ok(())
@@ -67,22 +65,11 @@ pub fn signup(_matches: &ArgMatches) -> Result<()> {
 pub fn login(_matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
-    let mut username = String::new();
-    print!("Enter username: ");
-    stdin
-        .read_line(&mut username)
-        .map_err(|_| anyhow!("failed to read username"))?;
-    let username = username.trim().to_owned();
-
+    let username = prompt("Enter username", &stdin)?;
     let password = rpassword::prompt_password("Enter Password: ")?;
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
-    let body = Credentials {
-        username: username.clone(),
-        password: password.clone(),
-    };
-
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("failed to serialize body"))?;
+    let url = get_url();
+    let body = Credentials::new(username.clone(), password.clone()).to_json_string()?;
 
     let response = get_client()?
         .post(url + "/account/login")
@@ -108,9 +95,7 @@ pub fn login(_matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::UNAUTHORIZED {
         println!("{}", response.text().unwrap_or_default());
     } else {
-        let status = response.status();
-        let text = response.text().unwrap_or_default();
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
 
     Ok(())
@@ -124,17 +109,8 @@ pub fn change_password(_matches: &ArgMatches) -> Result<()> {
     let old = rpassword::prompt_password("Enter old password: ")?;
     let new = rpassword::prompt_password("Enter new password: ")?;
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
-
-    let body = ChangePasswordPayload {
-        creds: Credentials {
-            username: username.clone(),
-            password: old,
-        },
-        new_password: new.clone(),
-    };
-
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+    let url = get_url();
+    let body = ChangePasswordPayload::new(Credentials::new(username.clone(), old), new.clone()).to_json_string()?;
 
     let response = get_client()?
         .put(url + "/account")
@@ -148,11 +124,7 @@ pub fn change_password(_matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::UNAUTHORIZED {
         println!("{}", response.text().unwrap_or_default());
     } else {
-        let status = response.status();
-        let text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
 
     Ok(())
@@ -174,14 +146,9 @@ pub fn delete_account(_matches: &ArgMatches) -> Result<()> {
         return Ok(());
     }
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+    let url = get_url();
 
-    let data = Credentials {
-        username: username.clone(),
-        password,
-    };
-
-    let headers = data.to_header();
+    let headers = Credentials::new(username.clone(), password).to_header();
 
     let response = get_client()?
         .delete(url + "/account")
@@ -197,11 +164,7 @@ pub fn delete_account(_matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::UNAUTHORIZED {
         println!("{}", response.text().unwrap_or_default());
     } else {
-        let status = response.status();
-        let text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
 
     Ok(())

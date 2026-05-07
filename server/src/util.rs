@@ -1,24 +1,13 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use bcrypt::verify;
-use http::StatusCode;
 use shared::models::Credentials;
 use shared::models::Key;
 use shared::models::KeyPayload;
 use spin_sdk::sqlite::Value;
-use spin_sdk::{
-    http::{Params, Request, Response},
-    sqlite::Connection,
-};
+use spin_sdk::{http::Request, sqlite::Connection};
 
 use crate::log;
-
-pub(crate) fn pong(_: Request, _: Params) -> Result<Response> {
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .body("pong".to_string())
-        .build())
-}
 
 fn connection() -> Result<Connection> {
     let connection = Connection::open("default")?;
@@ -77,41 +66,11 @@ impl Verify for shared::models::Credentials {
     }
 }
 
-#[inline]
-pub(crate) fn invalid_creds() -> Result<Response> {
-    Ok(Response::builder()
-        .status(StatusCode::UNAUTHORIZED)
-        .body("Invalid Username/Password")
-        .build())
-}
-
-#[inline]
-pub(crate) fn rate_limit_response() -> Result<Response> {
-    Ok(Response::builder()
-        .status(StatusCode::TOO_MANY_REQUESTS)
-        .body("Too many attempts, try again later")
-        .build())
-}
-
 pub(crate) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs()
-}
-
-pub(crate) fn get_salt(username: &str, conn: &Connection) -> Result<Vec<u8>> {
-    Ok(conn
-        .execute(
-            "select salt from Accounts where username = ?",
-            &[text(username)],
-        )?
-        .rows
-        .first()
-        .unwrap()
-        .get::<&[u8]>(0)
-        .map(ToOwned::to_owned)
-        .unwrap())
 }
 
 pub trait FromHeader: Sized {

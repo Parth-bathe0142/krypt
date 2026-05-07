@@ -4,9 +4,8 @@ use spin_sdk::http_component;
 
 use crate::routes::{
     change_key, change_password, create_account, delete_account, delete_key, get_key, list_keys,
-    login, set_key,
+    login, pong, set_key,
 };
-use crate::util::pong;
 
 mod encryption;
 mod log;

@@ -1,8 +1,6 @@
 use anyhow::{Ok, Result};
 use http::StatusCode;
-use spin_sdk::{
-    http::{IntoResponse, Params, Request, Response},
-};
+use spin_sdk::http::{IntoResponse, Params, Request, Response};
 
 use shared::models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload};
 
@@ -10,7 +8,11 @@ use crate::{
     encryption::{decrypt, encrypt},
     log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    util::{get_connection, int, invalid_creds, rate_limit_response, text, FromHeader, Verify},
+    routes::responses::{
+        created_response, invalid_creds, not_found_response, ok_response, ok_response_with_body,
+        rate_limit_response,
+    },
+    util::{get_connection, int, text, FromHeader, Verify},
 };
 
 pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse> {
@@ -39,13 +41,9 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
             let value = value.unwrap().get::<&str>(0).to_owned().unwrap();
             let value = decrypt(value, &creds.password, &creds.username, &connection)?;
 
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "text")
-                .body(value)
-                .build())
+            ok_response_with_body(&value, "text/plain")
         } else {
-            Ok(Response::builder().status(StatusCode::NOT_FOUND).build())
+            not_found_response()
         }
     } else {
         invalid_creds()
@@ -71,13 +69,10 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
             .collect::<Vec<_>>();
 
         if result.is_empty() {
-            Ok(Response::builder().status(StatusCode::NOT_FOUND).build())
+            not_found_response()
         } else {
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "application/json")
-                .body(serde_json::to_string(&result)?)
-                .build())
+            let json = serde_json::to_string(&result)?;
+            ok_response_with_body(&json, "application/json")
         }
     } else {
         invalid_creds()
@@ -98,7 +93,10 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
         clear_rate_limit(&creds.username)?;
 
         if connection
-            .execute("select name from Keys where name = ?", &[text(&key.name)])?
+            .execute(
+                "select name from Keys where account_id = ? and name = ?",
+                &[int(id), text(&key.name)],
+            )?
             .rows()
             .next()
             .is_some()
@@ -113,7 +111,7 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
                 &[int(id), text(&key.name), text(&encrypted)],
             )?;
 
-            Ok(Response::builder().status(StatusCode::CREATED).build())
+            created_response()
         } else {
             Ok(Response::builder().status(StatusCode::BAD_REQUEST).build())
         }
@@ -140,12 +138,15 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
         clear_rate_limit(&creds.username)?;
 
         if connection
-            .execute("select name from Keys where name = ?", &[text(&name)])?
+            .execute(
+                "select name from Keys where account_id = ? and name = ?",
+                &[int(id), text(&name)],
+            )?
             .rows()
             .next()
             .is_none()
         {
-            return Ok(Response::builder().status(StatusCode::NOT_FOUND).build());
+            return not_found_response();
         }
 
         let encrypted = encrypt(&new_value, &creds.password, &creds.username, &connection)?;
@@ -155,7 +156,7 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
             &[text(&encrypted), int(id), text(&name)],
         )?;
 
-        Ok(Response::builder().status(StatusCode::CREATED).build())
+        created_response()
     } else {
         invalid_creds()
     }
@@ -175,12 +176,15 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
         clear_rate_limit(&creds.username)?;
 
         if connection
-            .execute("select name from Keys where name = ?", &[text(&key.name)])?
+            .execute(
+                "select name from Keys where account_id = ? and name = ?",
+                &[int(id), text(&key.name)],
+            )?
             .rows()
             .next()
             .is_none()
         {
-            return Ok(Response::builder().status(StatusCode::NOT_FOUND).build());
+            return not_found_response();
         }
 
         connection.execute(
@@ -188,7 +192,7 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
             &[int(id), text(&key.name)],
         )?;
 
-        Ok(Response::builder().status(StatusCode::OK).build())
+        ok_response()
     } else {
         invalid_creds()
     }

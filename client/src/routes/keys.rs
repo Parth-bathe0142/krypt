@@ -1,9 +1,12 @@
 use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use reqwest::StatusCode;
-use shared::models::{ChangeKeyPayload, Credentials, Key, KeyPayload};
+use shared::models::{ChangeKeyPayload, Credentials, Key, KeyPayload, ToJson};
 
-use crate::util::{ToHeader, get_client, try_or_read_password, try_or_read_username};
+use crate::util::{
+    ToHeader, get_client, get_url, handle_unknown_response, prompt, try_or_read_password,
+    try_or_read_username,
+};
 
 pub fn get_key(matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
@@ -15,20 +18,13 @@ pub fn get_key(matches: &ArgMatches) -> Result<()> {
         .get_one::<String>("name")
         .ok_or_else(|| anyhow!("no key name provided"))?;
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+    let url = get_url();
 
-    let data = KeyPayload {
-        creds: Credentials {
-            username: username.clone(),
-            password,
-        },
-        key: Key {
-            name: key.clone(),
-            value: None,
-        },
-    };
-
-    let headers = data.to_header();
+    let headers = KeyPayload::new(
+        Credentials::new(username, password),
+        Key::new(key.clone(), None),
+    )
+    .to_header();
 
     let response = get_client()?
         .get(url + "/key")
@@ -45,9 +41,7 @@ pub fn get_key(matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::NOT_FOUND {
         println!("Key '{}' not found", key);
     } else {
-        let status = response.status();
-        let text = response.text().unwrap_or_default();
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
 
     Ok(())
@@ -59,14 +53,9 @@ pub fn get_all_keys(_matches: &ArgMatches) -> Result<()> {
     let username = try_or_read_username(&stdin)?;
     let password = try_or_read_password(&username, &stdin)?;
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+    let url = get_url();
 
-    let data = Credentials {
-        username: username.clone(),
-        password,
-    };
-
-    let headers = data.to_header();
+    let headers = Credentials::new(username.clone(), password).to_header();
 
     let response = get_client()?
         .get(url + "/key/list")
@@ -85,9 +74,7 @@ pub fn get_all_keys(_matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::NOT_FOUND {
         println!("No keys stored");
     } else {
-        let status = response.status();
-        let text = response.text().unwrap_or_default();
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
 
     Ok(())
@@ -103,27 +90,14 @@ pub fn set_key(matches: &ArgMatches) -> Result<()> {
         .get_one::<String>("name")
         .ok_or_else(|| anyhow!("no key name provided"))?;
 
-    let mut value = String::new();
-    print!("Enter value: ");
-    stdin
-        .read_line(&mut value)
-        .map_err(|_| anyhow!("failed to read value"))?;
-    let value = value.trim().to_owned();
+    let value = prompt("Enter value: ", &stdin)?;
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
-
-    let body = KeyPayload {
-        creds: Credentials {
-            username: username.clone(),
-            password,
-        },
-        key: Key {
-            name: key.clone(),
-            value: Some(value.clone()),
-        },
-    };
-
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+    let url = get_url();
+    let body = KeyPayload::new(
+        Credentials::new(username, password),
+        Key::new(key.clone(), Some(value)),
+    )
+    .to_json_string()?;
 
     let response = get_client()?
         .post(url + "/key")
@@ -136,11 +110,7 @@ pub fn set_key(matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::CONFLICT {
         println!("Key '{}' already exists", key);
     } else {
-        let status = response.status();
-        let text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
 
     Ok(())
@@ -156,25 +126,12 @@ pub fn change_key(matches: &ArgMatches) -> Result<()> {
         .get_one::<String>("name")
         .ok_or_else(|| anyhow!("no key name provided"))?;
 
-    let mut value = String::new();
-    print!("Enter value: ");
-    stdin
-        .read_line(&mut value)
-        .map_err(|_| anyhow!("failed to read value"))?;
-    let value = value.trim().to_owned();
+    let value = prompt("Enter value: ", &stdin)?;
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+    let url = get_url();
 
-    let body = ChangeKeyPayload {
-        creds: Credentials {
-            username: username.clone(),
-            password,
-        },
-        name: key.clone(),
-        new_value: value.clone(),
-    };
-
-    let body = serde_json::to_string(&body).map_err(|_| anyhow!("Failed to serialize payload"))?;
+    let body = ChangeKeyPayload::new(Credentials::new(username, password), key.clone(), value)
+        .to_json_string()?;
 
     let response = get_client()?
         .put(url + "/key")
@@ -187,11 +144,7 @@ pub fn change_key(matches: &ArgMatches) -> Result<()> {
     } else if response.status() == StatusCode::NOT_FOUND {
         println!("Key '{}' not found", key);
     } else {
-        let status = response.status();
-        let text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
     Ok(())
 }
@@ -211,25 +164,19 @@ pub fn delete_key(matches: &ArgMatches) -> Result<()> {
     stdin
         .read_line(&mut confirmation)
         .map_err(|_| anyhow!("failed to read confirmation"))?;
+
     if confirmation.trim() != "y" {
         println!("Aborted");
         return Ok(());
     }
 
-    let url = env!("SERVER_URL").trim_end_matches("/").to_owned();
+    let url = get_url();
 
-    let data = KeyPayload {
-        creds: Credentials {
-            username: username.clone(),
-            password,
-        },
-        key: Key {
-            name: key.clone(),
-            value: None,
-        },
-    };
-
-    let headers = data.to_header();
+    let headers = KeyPayload::new(
+        Credentials::new(username, password),
+        Key::new(key.clone(), None),
+    )
+    .to_header();
 
     let response = get_client()?
         .delete(url + "/key")
@@ -240,12 +187,7 @@ pub fn delete_key(matches: &ArgMatches) -> Result<()> {
     if response.status() == StatusCode::OK {
         println!("Key deleted successfully");
     } else {
-        let status = response.status();
-        let text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
-        println!("Error {}: {}", status, text);
+        handle_unknown_response(response);
     }
-
     Ok(())
 }
