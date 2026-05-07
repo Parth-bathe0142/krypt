@@ -22,7 +22,7 @@ fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
     Ok(key)
 }
 
- fn get_salt(username: &str, conn: &Connection) -> Result<Vec<u8>> {
+fn get_salt(username: &str, conn: &Connection) -> Result<Vec<u8>> {
     Ok(conn
         .execute(
             "select salt from Accounts where username = ?",
