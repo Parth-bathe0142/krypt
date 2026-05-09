@@ -1,4 +1,4 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use http::StatusCode;
 use spin_sdk::http::{IntoResponse, Params, Request, Response};
 
@@ -9,8 +9,8 @@ use crate::{
     log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
     routes::responses::{
-        created_response, invalid_creds, not_found_response, ok_response, ok_response_with_body,
-        rate_limit_response,
+        bad_request, created_response, invalid_creds, not_found_response, ok_response,
+        ok_response_with_body, rate_limit_response,
     },
     util::{get_connection, int, text, FromHeader, Verify},
 };
@@ -19,8 +19,10 @@ pub(crate) fn get_key(req: Request, _param: Params) -> Result<impl IntoResponse>
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let KeyPayload { creds, key } = KeyPayload::from_header(&req)?;
+    // BAD_REQUEST
+    let Ok(KeyPayload { creds, key }) = KeyPayload::from_header(&req) else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         log::warn(&format!("Too many requests for {}", creds.username));
@@ -64,8 +66,10 @@ pub(crate) fn list_keys(req: Request, _param: Params) -> Result<impl IntoRespons
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let creds = Credentials::from_header(&req)?;
+    // BAD_REQUEST
+    let Ok(creds) = Credentials::from_header(&req) else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         // TOO_MANY_REQUESTS
@@ -103,8 +107,10 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let KeyPayload { creds, key } = KeyPayload::from_request(req)?;
+    // BAD_REQUEST
+    let Ok(KeyPayload { creds, key }) = KeyPayload::from_request(req) else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         log::warn(&format!("Too many requests for {}", creds.username));
@@ -156,12 +162,15 @@ pub(crate) fn change_key(req: Request, _param: Params) -> Result<impl IntoRespon
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let ChangeKeyPayload {
+    // BAD_REQUEST
+    let Ok(ChangeKeyPayload {
         creds,
         name,
         new_value,
-    } = ChangeKeyPayload::from_request(req)?;
+    }) = ChangeKeyPayload::from_request(req)
+    else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         log::warn(&format!("Too many requests for {}", creds.username));
@@ -209,8 +218,10 @@ pub(crate) fn delete_key(req: Request, _param: Params) -> Result<impl IntoRespon
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let KeyPayload { creds, key } = KeyPayload::from_header(&req)?;
+    // BAD_REQUEST
+    let Ok(KeyPayload { creds, key }) = KeyPayload::from_header(&req) else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         log::warn(&format!("Too many requests for {}", creds.username));

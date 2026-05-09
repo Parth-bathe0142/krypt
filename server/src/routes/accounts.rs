@@ -12,7 +12,10 @@ use crate::{
     encryption::{decrypt, encrypt},
     log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
-    routes::responses::{created_response, invalid_creds, ok_response, rate_limit_response},
+    routes::responses::{
+        bad_request, created_response, invalid_creds, invalid_password, invalid_username,
+        ok_response, rate_limit_response,
+    },
     util::{get_connection, int, text, FromHeader, Verify},
 };
 
@@ -20,13 +23,19 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let creds = Credentials::from_request(req)?;
+    // BAD_REQUEST
+    let Ok(creds) = Credentials::from_request(req) else {
+        return bad_request();
+    };
 
-    // 500 ?
-    validate_username(&creds.username)?;
-    // 500 ?
-    validate_password(&creds.password)?;
+    // NOT_ACCEPTABLE
+    let Ok(_) = validate_username(&creds.username) else {
+        return invalid_username();
+    };
+    // NOT_ACCEPTABLE
+    let Ok(_) = validate_password(&creds.password) else {
+        return invalid_password();
+    };
 
     // 500
     let rows = connection
@@ -76,8 +85,10 @@ pub(crate) fn login(req: Request, _params: Params) -> Result<impl IntoResponse> 
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let creds = Credentials::from_request(req)?;
+    // BAD_REQUEST
+    let Ok(creds) = Credentials::from_request(req) else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         log::warn(&format!("Too many requests for {}", creds.username));
@@ -101,11 +112,14 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let ChangePasswordPayload {
+    // BAD_REQUEST
+    let Ok(ChangePasswordPayload {
         creds,
         new_password,
-    } = ChangePasswordPayload::from_request(req)?;
+    }) = ChangePasswordPayload::from_request(req)
+    else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         log::warn(&format!("Too many requests for {}", creds.username));
@@ -113,8 +127,10 @@ pub(crate) fn change_password(req: Request, _params: Params) -> Result<impl Into
         return rate_limit_response();
     }
 
-    // 500 ?
-    validate_password(&new_password)?;
+    // NOT_ACCEPTABLE
+    let Ok(_) = validate_password(&new_password) else {
+        return invalid_password();
+    };
 
     // 500
     if let Some(id) = creds.verify(&connection)? {
@@ -177,8 +193,10 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
     // 500
     let connection = get_connection()?;
 
-    // 500 ?
-    let creds = Credentials::from_header(&req)?;
+    // BAD_REQUEST
+    let Ok(creds) = Credentials::from_header(&req) else {
+        return bad_request();
+    };
 
     if let Err(_) = check_rate_limit(&creds.username) {
         // TOO_MANY_REQUESTS
@@ -202,6 +220,6 @@ pub(crate) fn delete_account(req: Request, _params: Params) -> Result<impl IntoR
         ok_response()
     } else {
         // UNAUTHORIZED invalid credentials
-        invalid_creds()                            // 500
+        invalid_creds()
     }
 }

@@ -41,3 +41,26 @@ pub(crate) fn rate_limit_response() -> Result<Response> {
         .body("Too many attempts, try again later")
         .build())
 }
+
+#[inline]
+pub(crate) fn bad_request() -> Result<Response> {
+    Ok(Response::builder()
+        .status(StatusCode::BAD_REQUEST)
+        .build())
+}
+
+#[inline]
+pub(crate) fn invalid_username() -> Result<Response> {
+    Ok(Response::builder()
+        .status(StatusCode::NOT_ACCEPTABLE)
+        .body("Invalid Username")
+        .build())
+}
+
+#[inline]
+pub(crate) fn invalid_password() -> Result<Response> {
+    Ok(Response::builder()
+        .status(StatusCode::NOT_ACCEPTABLE)
+        .body("Invalid Password")
+        .build())
+}
