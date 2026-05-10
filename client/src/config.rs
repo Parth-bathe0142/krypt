@@ -1,5 +1,6 @@
+use anyhow::{Result, anyhow};
 use std::{fs, path::PathBuf};
-use anyhow::{anyhow, Result};
+use toml::Table;
 
 const APP_NAME: &str = "krypt";
 const CONFIG_FILE: &str = "config.toml";
@@ -8,38 +9,100 @@ fn config_path() -> Result<PathBuf> {
     let dir = dirs::config_dir()
         .ok_or_else(|| anyhow!("Could not find config directory"))?
         .join(APP_NAME);
-    
+
     fs::create_dir_all(&dir)?;
     Ok(dir.join(CONFIG_FILE))
 }
 
-pub fn get_username() -> Result<String> {
+pub fn get_value(table: &str, key: &str) -> Result<String> {
     let path = config_path()?;
-    
-    let content = fs::read_to_string(&path)
-        .map_err(|_| anyhow!("Not logged in, run `krypt [signup | login]` first"))?;
-    
-    let table = content.parse::<toml::Table>()
+
+    let content = fs::read_to_string(&path).map_err(|_| anyhow!("Could not read config file"))?;
+    let mut toml = content
+        .parse::<toml::Table>()
         .map_err(|_| anyhow!("Corrupt config file"))?;
-    
-    table["username"]
+
+    let toml = if table.is_empty() {
+        &mut toml
+    } else {
+        match toml.get_mut(table) {
+            Some(table) => table.as_table_mut().unwrap(),
+            None => {
+                toml.insert(table.to_owned(), toml::Value::Table(Table::new()));
+
+                toml.get_mut(table)
+                    .unwrap()
+                    .as_table_mut()
+                    .unwrap()
+            }
+        }
+    };
+
+    toml[key]
         .as_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| anyhow!("Username not found in config"))
+        .ok_or_else(|| anyhow!("key '{key}' not found in config"))
 }
 
-pub fn set_username(username: &str) -> Result<()> {
+pub fn add_entry(table: &str, key: &str, value: &str) -> Result<Option<String>> {
     let path = config_path()?;
-    
-    fs::write(path, format!("username = \"{username}\"\n"))?;
-    Ok(())
-}
 
-pub fn clear_username() -> Result<()> {
-    let path = config_path()?;
-    
-    if path.exists() {
-        fs::remove_file(path)?;
+    let content = fs::read_to_string(&path).map_err(|_| anyhow!("Could not read config file"))?;
+
+    let mut toml = content
+        .parse::<toml::Table>()
+        .map_err(|_| anyhow!("Corrupt config file"))?;
+
+    let old = if table.is_empty() {
+        &mut toml
+    } else {
+        match toml.get_mut(table) {
+            Some(table) => table.as_table_mut().unwrap(),
+            None => {
+                toml.insert(table.to_owned(), toml::Value::Table(Table::new()));
+
+                toml.get_mut(table)
+                    .ok_or_else(|| anyhow!("Table not found"))?
+                    .as_table_mut()
+                    .unwrap()
+            }
+        }
     }
+    .insert(key.to_string(), value.parse::<toml::Value>()?)
+    .map(|v| v.as_str().unwrap().to_string());
+
+    fs::write(&path, toml.to_string())?;
+    Ok(old)
+}
+
+pub fn clear_value(table: &str, key: &str) -> Result<()> {
+    let path = config_path()?;
+
+    let content = fs::read_to_string(&path).map_err(|_| anyhow!("Could not read config file"))?;
+
+    let mut toml = content
+        .parse::<toml::Table>()
+        .map_err(|_| anyhow!("Corrupt config file"))?;
+
+    let toml = if table.is_empty() {
+        &mut toml
+    } else {
+        match toml.get_mut(table) {
+            Some(table) => table.as_table_mut().unwrap(),
+            None => {
+                toml.insert(table.to_owned(), toml::Value::Table(Table::new()));
+
+                toml.get_mut(table)
+                    .ok_or_else(|| anyhow!("Table not found"))?
+                    .as_table_mut()
+                    .unwrap()
+            }
+        }
+    };
+
+    toml.remove(key)
+        .ok_or_else(|| anyhow!("Username was not set"))?;
+
+    fs::write(&path, table.to_string())?;
     Ok(())
 }

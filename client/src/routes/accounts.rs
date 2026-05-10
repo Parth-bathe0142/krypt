@@ -7,7 +7,7 @@ use shared::{
 };
 
 use crate::{
-    config::{clear_username, set_username},
+    config::{clear_username, add_entry},
     keyring::{clear_password, save},
     util::{
         ToHeader, get_client, get_url, handle_unknown_response, prompt, try_or_read_password,
@@ -44,7 +44,7 @@ pub fn signup(_matches: &ArgMatches) -> Result<()> {
 
         let saved = save(&username, &password);
         if saved.is_ok() {
-            set_username(&username)?;
+            add_entry("", "username", &username)?;
 
             println!("Credentials saved successfully")
         } else {
@@ -81,7 +81,7 @@ pub fn login(_matches: &ArgMatches) -> Result<()> {
         println!("Account verified successfully");
         println!("Saving credentials to keyring...");
 
-        set_username(&username)?;
+        add_entry("", "username", &username)?;
 
         let saved = save(&username, &password);
         if saved.is_ok() {
