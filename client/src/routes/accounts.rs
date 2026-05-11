@@ -1,3 +1,5 @@
+use std::io::{Write, stdout};
+
 use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use reqwest::StatusCode;
@@ -7,11 +9,11 @@ use shared::{
 };
 
 use crate::{
-    config::{clear_username, add_entry},
+    config,
     keyring::{clear_password, save},
     util::{
-        ToHeader, get_client, get_url, handle_unknown_response, prompt, try_or_read_password,
-        try_or_read_username,
+        ToHeader, get_client, get_url, handle_internal_error, handle_unauthorized,
+        handle_unknown_response, prompt, try_or_read_password, try_or_read_username,
     },
 };
 
@@ -38,25 +40,29 @@ pub fn signup(_matches: &ArgMatches) -> Result<()> {
         .body(body)
         .send()?;
 
-    if response.status() == StatusCode::CREATED {
-        println!("Account created successfully");
-        println!("Saving credentials to keyring...");
+    match response.status() {
+        StatusCode::CREATED => {
+            println!("Account created successfully");
+            println!("Saving credentials to keyring...");
 
-        let saved = save(&username, &password);
-        if saved.is_ok() {
-            add_entry("", "username", &username)?;
+            let saved = save(&username, &password);
+            if saved.is_ok() {
+                config::add_entry("", "username", &username)?;
 
-            println!("Credentials saved successfully")
-        } else {
-            println!(
-                "Failed to save credentials to the device's keyring, you may have to provide credentials with each request"
-            );
-            return saved;
+                println!("Credentials saved successfully")
+            } else {
+                println!(
+                    "Failed to save credentials to the device's keyring, you may have to provide credentials with each request"
+                );
+                return saved;
+            }
         }
-    } else if response.status() == StatusCode::CONFLICT {
-        println!("Username already exists");
-    } else {
-        handle_unknown_response(response);
+
+        StatusCode::CONFLICT => println!("Username already exists"),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::NOT_ACCEPTABLE => println!("Invalid credentials"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
 
     Ok(())
@@ -77,25 +83,28 @@ pub fn login(_matches: &ArgMatches) -> Result<()> {
         .body(body)
         .send()?;
 
-    if response.status() == StatusCode::ACCEPTED {
-        println!("Account verified successfully");
-        println!("Saving credentials to keyring...");
+    match response.status() {
+        StatusCode::ACCEPTED => {
+            println!("Account verified successfully");
+            println!("Saving credentials to keyring...");
 
-        add_entry("", "username", &username)?;
+            config::add_entry("", "username", &username)?;
 
-        let saved = save(&username, &password);
-        if saved.is_ok() {
-            println!("Credentials saved successfully")
-        } else {
-            println!(
-                "Failed to save credentials to the device's keyring, you may have to provide credentials with each request"
-            );
-            return saved;
+            let saved = save(&username, &password);
+            if saved.is_ok() {
+                println!("Credentials saved successfully")
+            } else {
+                println!(
+                    "Failed to save credentials to the device's keyring, you may have to provide credentials with each request"
+                );
+                return saved;
+            }
         }
-    } else if response.status() == StatusCode::UNAUTHORIZED {
-        println!("{}", response.text().unwrap_or_default());
-    } else {
-        handle_unknown_response(response);
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many attempts, try again later"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
 
     Ok(())
@@ -110,7 +119,8 @@ pub fn change_password(_matches: &ArgMatches) -> Result<()> {
     let new = rpassword::prompt_password("Enter new password: ")?;
 
     let url = get_url();
-    let body = ChangePasswordPayload::new(Credentials::new(username.clone(), old), new.clone()).to_json_string()?;
+    let body = ChangePasswordPayload::new(Credentials::new(username.clone(), old), new.clone())
+        .to_json_string()?;
 
     let response = get_client()?
         .put(url + "/account")
@@ -118,13 +128,19 @@ pub fn change_password(_matches: &ArgMatches) -> Result<()> {
         .body(body)
         .send()?;
 
-    if response.status() == StatusCode::OK {
-        println!("Password changed successfully");
-        save(&username, &new)?;
-    } else if response.status() == StatusCode::UNAUTHORIZED {
-        println!("{}", response.text().unwrap_or_default());
-    } else {
-        handle_unknown_response(response);
+    match response.status() {
+        StatusCode::OK => {
+            println!("Password changed successfully");
+            save(&username, &new)?;
+        }
+        StatusCode::NOT_ACCEPTABLE => {
+            println!("{}", response.text().unwrap_or_default());
+        }
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many attempts, try again later"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
 
     Ok(())
@@ -134,9 +150,10 @@ pub fn delete_account(_matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
     let username = try_or_read_username(&stdin)?;
-    let password = try_or_read_password(&username, &stdin)?;
+    let password = try_or_read_password(&username)?;
 
     print!("Are you sure you want to delete your account? (y/N): ");
+    stdout().flush()?;
     let mut confirmation = String::new();
     stdin
         .read_line(&mut confirmation)
@@ -156,15 +173,18 @@ pub fn delete_account(_matches: &ArgMatches) -> Result<()> {
         .headers(headers)
         .send()?;
 
-    if response.status() == StatusCode::OK {
-        println!("Account deleted successfully");
+    match response.status() {
+        StatusCode::OK => {
+            println!("Account deleted successfully");
 
-        clear_password(&username)?;
-        clear_username()?;
-    } else if response.status() == StatusCode::UNAUTHORIZED {
-        println!("{}", response.text().unwrap_or_default());
-    } else {
-        handle_unknown_response(response);
+            clear_password(&username)?;
+            config::clear_value("", "username")?;
+        }
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many attempts, try again later"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
 
     Ok(())

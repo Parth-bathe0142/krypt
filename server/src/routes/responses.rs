@@ -17,8 +17,22 @@ pub(crate) fn ok_response_with_body(body: &str, content_type: &str) -> Result<Re
 }
 
 #[inline]
+pub(crate) fn accepted_response() -> Result<Response> {
+    Ok(Response::builder().status(StatusCode::ACCEPTED).build())
+}
+
+#[inline]
 pub(crate) fn created_response() -> Result<Response> {
     Ok(Response::builder().status(StatusCode::CREATED).build())
+}
+
+#[inline]
+pub(crate) fn conflict_response(body: &str) -> Result<Response> {
+    Ok(Response::builder()
+        .status(StatusCode::CONFLICT)
+        .header("Content-Type", "text/plain")
+        .body(body)
+        .build())
 }
 
 #[inline]
@@ -44,9 +58,7 @@ pub(crate) fn rate_limit_response() -> Result<Response> {
 
 #[inline]
 pub(crate) fn bad_request() -> Result<Response> {
-    Ok(Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .build())
+    Ok(Response::builder().status(StatusCode::BAD_REQUEST).build())
 }
 
 #[inline]

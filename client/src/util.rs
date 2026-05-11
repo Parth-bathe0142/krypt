@@ -1,10 +1,16 @@
-use std::{io::{Stdin, Write, stdout}, time::Duration};
+use std::{
+    io::{Stdin, Write, stdout},
+    time::Duration,
+};
 
 use anyhow::{Result, anyhow};
 use reqwest::{blocking::Response, header::HeaderMap};
 use shared::models::{Credentials, KeyPayload};
 
-use crate::{config::get_username, keyring::get_password};
+use crate::{
+    config::{self, get_value},
+    keyring::get_password,
+};
 
 pub(crate) fn prompt(message: &str, stdin: &Stdin) -> Result<String> {
     let mut tries = 0;
@@ -31,7 +37,7 @@ pub(crate) fn prompt(message: &str, stdin: &Stdin) -> Result<String> {
 }
 
 pub(crate) fn try_or_read_username(stdin: &Stdin) -> Result<String> {
-    match get_username() {
+    match get_value("", "username") {
         Ok(username) => Ok(username),
         Err(err) => {
             println!("could not get username from config: {err}");
@@ -40,18 +46,19 @@ pub(crate) fn try_or_read_username(stdin: &Stdin) -> Result<String> {
     }
 }
 
-pub(crate) fn try_or_read_password(username: &str, stdin: &Stdin) -> Result<String> {
+pub(crate) fn try_or_read_password(username: &str) -> Result<String> {
     match get_password(&username) {
         Ok(password) => Ok(password),
         Err(err) => {
             println!("could not get password from keyring: {err}");
-            prompt("Enter password", stdin)
+            rpassword::prompt_password("Enter password").map_err(Into::into)
         }
     }
 }
 
 pub(crate) fn get_url() -> String {
-    env!("SERVER_URL").trim_end_matches("/").to_owned()
+    config::get_value("server", "url")
+        .unwrap_or(env!("SERVER_URL").trim_end_matches("/").to_owned())
 }
 
 pub(crate) fn get_client() -> Result<reqwest::blocking::Client> {
@@ -88,4 +95,14 @@ pub(crate) fn handle_unknown_response(response: Response) {
     let status = response.status();
     let text = response.text().unwrap_or_default();
     println!("Error {}: {}", status, text);
+}
+
+pub(crate) fn handle_internal_error(response: Response) {
+    let text = response.text().unwrap_or_default();
+    println!("Internal server error: {}", text);
+}
+
+pub(crate) fn handle_unauthorized(response: Response) {
+    let text = response.text().unwrap_or_default();
+    println!("Unauthorized: {}", text);
 }

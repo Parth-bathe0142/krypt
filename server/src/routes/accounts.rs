@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use bcrypt::{hash, DEFAULT_COST};
-use http::StatusCode;
-use spin_sdk::http::{IntoResponse, Params, Request, Response};
+use spin_sdk::http::{IntoResponse, Params, Request};
 
 use shared::{
     models::{ChangePasswordPayload, Credentials, JsonPayload},
@@ -13,8 +12,8 @@ use crate::{
     log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
     routes::responses::{
-        bad_request, created_response, invalid_creds, invalid_password, invalid_username,
-        ok_response, rate_limit_response,
+        accepted_response, bad_request, conflict_response, created_response, invalid_creds,
+        invalid_password, invalid_username, ok_response, rate_limit_response,
     },
     util::{get_connection, int, text, FromHeader, Verify},
 };
@@ -47,10 +46,7 @@ pub(crate) fn create_account(req: Request, _params: Params) -> Result<impl IntoR
 
     // CONFLICT username exists
     if rows.first().is_some() {
-        Ok(Response::builder()
-            .status(StatusCode::CONFLICT)
-            .body("username already exists")
-            .build())
+        conflict_response("Username already exists")
     } else {
         // 500
         let hash = hash(creds.password, DEFAULT_COST)?;
@@ -101,7 +97,7 @@ pub(crate) fn login(req: Request, _params: Params) -> Result<impl IntoResponse> 
         // 500
         clear_rate_limit(&creds.username)?;
         // ACCEPTED valid credentials
-        Ok(Response::builder().status(StatusCode::ACCEPTED).build())
+        accepted_response()
     } else {
         // UNAUTHORIZED invalid credentials
         invalid_creds()

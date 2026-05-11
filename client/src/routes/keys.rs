@@ -1,18 +1,20 @@
+use std::io::{Write, stdout};
+
 use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use reqwest::StatusCode;
 use shared::models::{ChangeKeyPayload, Credentials, Key, KeyPayload, ToJson};
 
 use crate::util::{
-    ToHeader, get_client, get_url, handle_unknown_response, prompt, try_or_read_password,
-    try_or_read_username,
+    ToHeader, get_client, get_url, handle_internal_error, handle_unauthorized,
+    handle_unknown_response, prompt, try_or_read_password, try_or_read_username,
 };
 
 pub fn get_key(matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
     let username = try_or_read_username(&stdin)?;
-    let password = try_or_read_password(&username, &stdin)?;
+    let password = try_or_read_password(&username)?;
 
     let key = matches
         .get_one::<String>("name")
@@ -32,16 +34,20 @@ pub fn get_key(matches: &ArgMatches) -> Result<()> {
         .headers(headers)
         .send()?;
 
-    if response.status() == StatusCode::OK {
-        let value = response
-            .text()
-            .map_err(|_| anyhow!("empty response body"))?;
+    match response.status() {
+        StatusCode::OK => {
+            let value = response
+                .text()
+                .map_err(|_| anyhow!("empty response body"))?;
 
-        println!("{key} = {value}");
-    } else if response.status() == StatusCode::NOT_FOUND {
-        println!("Key '{}' not found", key);
-    } else {
-        handle_unknown_response(response);
+            println!("{key} = {value}");
+        }
+        StatusCode::NOT_FOUND => println!("Key '{}' not found", key),
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many requests, try again later"),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
 
     Ok(())
@@ -51,7 +57,7 @@ pub fn get_all_keys(_matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
     let username = try_or_read_username(&stdin)?;
-    let password = try_or_read_password(&username, &stdin)?;
+    let password = try_or_read_password(&username)?;
 
     let url = get_url();
 
@@ -63,18 +69,22 @@ pub fn get_all_keys(_matches: &ArgMatches) -> Result<()> {
         .headers(headers)
         .send()?;
 
-    if response.status() == StatusCode::OK {
-        let entries = response
-            .json::<Vec<String>>()
-            .map_err(|_| anyhow!("empty response body"))?;
+    match response.status() {
+        StatusCode::OK => {
+            let entries = response
+                .json::<Vec<String>>()
+                .map_err(|_| anyhow!("empty response body"))?;
 
-        for entry in entries {
-            println!("{}", entry);
+            for entry in entries {
+                println!("{}", entry);
+            }
         }
-    } else if response.status() == StatusCode::NOT_FOUND {
-        println!("No keys stored");
-    } else {
-        handle_unknown_response(response);
+        StatusCode::NOT_FOUND => println!("No keys stored"),
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many requests, try again later"),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
 
     Ok(())
@@ -84,7 +94,7 @@ pub fn set_key(matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
     let username = try_or_read_username(&stdin)?;
-    let password = try_or_read_password(&username, &stdin)?;
+    let password = try_or_read_password(&username)?;
 
     let key = matches
         .get_one::<String>("name")
@@ -105,12 +115,14 @@ pub fn set_key(matches: &ArgMatches) -> Result<()> {
         .body(body)
         .send()?;
 
-    if response.status() == StatusCode::CREATED {
-        println!("Key saved successfully");
-    } else if response.status() == StatusCode::CONFLICT {
-        println!("Key '{}' already exists", key);
-    } else {
-        handle_unknown_response(response);
+    match response.status() {
+        StatusCode::CREATED => println!("Key saved successfully"),
+        StatusCode::CONFLICT => println!("Key '{}' already exists", key),
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many requests, try again later"),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
 
     Ok(())
@@ -120,7 +132,7 @@ pub fn change_key(matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
     let username = try_or_read_username(&stdin)?;
-    let password = try_or_read_password(&username, &stdin)?;
+    let password = try_or_read_password(&username)?;
 
     let key = matches
         .get_one::<String>("name")
@@ -139,12 +151,14 @@ pub fn change_key(matches: &ArgMatches) -> Result<()> {
         .body(body)
         .send()?;
 
-    if response.status() == StatusCode::CREATED {
-        println!("Key changed successfully");
-    } else if response.status() == StatusCode::NOT_FOUND {
-        println!("Key '{}' not found", key);
-    } else {
-        handle_unknown_response(response);
+    match response.status() {
+        StatusCode::CREATED => println!("Key changed successfully"),
+        StatusCode::NOT_FOUND => println!("Key '{key}' does not exist"),
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many requests, try again later"),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
     Ok(())
 }
@@ -153,13 +167,14 @@ pub fn delete_key(matches: &ArgMatches) -> Result<()> {
     let stdin = std::io::stdin();
 
     let username = try_or_read_username(&stdin)?;
-    let password = try_or_read_password(&username, &stdin)?;
+    let password = try_or_read_password(&username)?;
 
     let key = matches
         .get_one::<String>("name")
         .ok_or_else(|| anyhow!("no key name provided"))?;
 
     print!("Are you sure you want to delete the key '{}'? (y/N): ", key);
+    stdout().flush()?;
     let mut confirmation = String::new();
     stdin
         .read_line(&mut confirmation)
@@ -184,10 +199,14 @@ pub fn delete_key(matches: &ArgMatches) -> Result<()> {
         .headers(headers)
         .send()?;
 
-    if response.status() == StatusCode::OK {
-        println!("Key deleted successfully");
-    } else {
-        handle_unknown_response(response);
+    match response.status() {
+        StatusCode::OK => println!("Key deleted successfully"),
+        StatusCode::NOT_FOUND => println!("Key '{key}' does not exist"),
+        StatusCode::UNAUTHORIZED => handle_unauthorized(response),
+        StatusCode::TOO_MANY_REQUESTS => println!("Too many requests, try again later"),
+        StatusCode::BAD_REQUEST => println!("Bad request"),
+        StatusCode::INTERNAL_SERVER_ERROR => handle_internal_error(response),
+        _ => handle_unknown_response(response),
     }
     Ok(())
 }

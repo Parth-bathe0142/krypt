@@ -1,6 +1,5 @@
 use anyhow::Result;
-use http::StatusCode;
-use spin_sdk::http::{IntoResponse, Params, Request, Response};
+use spin_sdk::http::{IntoResponse, Params, Request};
 
 use shared::models::{ChangeKeyPayload, Credentials, JsonPayload, KeyPayload};
 
@@ -9,8 +8,8 @@ use crate::{
     log,
     rate_limiting::{check_rate_limit, clear_rate_limit},
     routes::responses::{
-        bad_request, created_response, invalid_creds, not_found_response, ok_response,
-        ok_response_with_body, rate_limit_response,
+        bad_request, conflict_response, created_response, invalid_creds, not_found_response,
+        ok_response, ok_response_with_body, rate_limit_response,
     },
     util::{get_connection, int, text, FromHeader, Verify},
 };
@@ -134,7 +133,7 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
             .is_some()
         {
             // CONFLICT key already exists
-            return Ok(Response::builder().status(StatusCode::CONFLICT).build());
+            return conflict_response("Key already exists");
         }
 
         if let Some(val) = key.value {
@@ -150,7 +149,7 @@ pub(crate) fn set_key(req: Request, _param: Params) -> Result<impl IntoResponse>
             created_response()
         } else {
             // BAD_REQUEST key value is missing
-            Ok(Response::builder().status(StatusCode::BAD_REQUEST).build())
+            bad_request()
         }
     } else {
         // UNAUTHORIZED invalid credentials
