@@ -11,13 +11,18 @@ fn config_path() -> Result<PathBuf> {
         .join(APP_NAME);
 
     fs::create_dir_all(&dir)?;
-    Ok(dir.join(CONFIG_FILE))
+    let file = dir.join(CONFIG_FILE);
+    if !fs::exists(&file)? {
+        fs::write(&file, "")?;
+    }
+    
+    Ok(file)
 }
 
 pub fn get_value(table: &str, key: &str) -> Result<Option<String>> {
     let path = config_path()?;
 
-    let content = fs::read_to_string(&path).map_err(|_| anyhow!("Could not read config file"))?;
+    let content = fs::read_to_string(&path).map_err(|err| anyhow!("Could not read config file {err}"))?;
     let mut toml = content
         .parse::<toml::Table>()
         .map_err(|_| anyhow!("Corrupt config file"))?;
