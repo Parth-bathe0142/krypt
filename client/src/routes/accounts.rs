@@ -1,5 +1,3 @@
-use std::io::{Write, stdout};
-
 use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use reqwest::StatusCode;
@@ -12,7 +10,7 @@ use crate::{
     config,
     keyring::{clear_password, save},
     util::{
-        ToHeader, get_client, get_url, handle_internal_error, handle_unauthorized,
+        ToHeader, confirm, get_client, get_url, handle_internal_error, handle_unauthorized,
         handle_unknown_response, prompt, try_or_read_password, try_or_read_username,
     },
 };
@@ -152,13 +150,11 @@ pub fn delete_account(_matches: &ArgMatches) -> Result<()> {
     let username = try_or_read_username(&stdin)?;
     let password = try_or_read_password(&username)?;
 
-    print!("Are you sure you want to delete your account? (y/N): ");
-    stdout().flush()?;
-    let mut confirmation = String::new();
-    stdin
-        .read_line(&mut confirmation)
-        .map_err(|_| anyhow!("failed to read confirmation"))?;
-    if confirmation.trim() != "y" {
+    if confirm(
+        "Are you sure you want to delete your account?",
+        true,
+        &stdin,
+    )? {
         println!("Aborted");
         return Ok(());
     }

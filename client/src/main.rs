@@ -58,7 +58,7 @@ fn main() -> Result<()> {
                             .index(1)
                             .value_name("URL")
                             .conflicts_with("default")
-                            .help("The URL of the deployed server, if not set, uses the default URL from build.rs")
+                            .help("The new URL of the deployed server")
                     ).arg(
                         Arg::new("default")
                             .short('d')
@@ -67,6 +67,23 @@ fn main() -> Result<()> {
                             .action(ArgAction::SetTrue)
                             .help("Set URL back to the default URL from build.rs")
                     )
+                ).subcommand(
+                    Command::new("set-copy-timeout")
+                        .arg(
+                            Arg::new("timeout")
+                                .index(1)
+                                .value_name("TIMEOUT")
+                                .conflicts_with("none")
+                                .value_parser(clap::value_parser!(u64).range(1..60))
+                                .help("The timeout in seconds for keeping the key in the clipboard before removal")
+                        ).arg(
+                            Arg::new("none")
+                                .short('n')
+                                .long("none")
+                                .conflicts_with("timeout")
+                                .action(ArgAction::SetTrue)
+                                .help("Disables the timeout and keeps the key in the clipboard indefinitely")
+                        )
                 )
         );
 

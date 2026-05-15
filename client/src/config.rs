@@ -14,7 +14,7 @@ fn config_path() -> Result<PathBuf> {
     Ok(dir.join(CONFIG_FILE))
 }
 
-pub fn get_value(table: &str, key: &str) -> Result<String> {
+pub fn get_value(table: &str, key: &str) -> Result<Option<String>> {
     let path = config_path()?;
 
     let content = fs::read_to_string(&path).map_err(|_| anyhow!("Could not read config file"))?;
@@ -38,10 +38,9 @@ pub fn get_value(table: &str, key: &str) -> Result<String> {
         }
     };
 
-    toml[key]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| anyhow!("key '{key}' not found in config"))
+    Ok(toml.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string()))
 }
 
 pub fn add_entry(table: &str, key: &str, value: &str) -> Result<Option<String>> {
@@ -68,7 +67,7 @@ pub fn add_entry(table: &str, key: &str, value: &str) -> Result<Option<String>> 
             }
         }
     }
-    .insert(key.to_string(), value.parse::<toml::Value>()?)
+    .insert(key.to_string(), toml::value::Value::String(value.to_string()))
     .map(|v| v.as_str().unwrap().to_string());
 
     fs::write(&path, toml.to_string())?;

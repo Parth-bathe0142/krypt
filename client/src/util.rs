@@ -36,11 +36,31 @@ pub(crate) fn prompt(message: &str, stdin: &Stdin) -> Result<String> {
     }
 }
 
+pub(crate) fn confirm(message: &str, default: bool, stdin: &Stdin) -> Result<bool> {
+    let options = if default { "[Y/n]" } else { "[y/N]" };
+    print!("{message} {options}: ");
+    stdout().flush()?;
+    
+    let mut confirmation = String::new();
+    stdin
+        .read_line(&mut confirmation)
+        .map_err(|_| anyhow!("failed to read confirmation"))?;
+    
+    let confirmation = confirmation.trim().to_lowercase();
+    if confirmation == "y" {
+        Ok(true)
+    } else if confirmation == "n" {
+        Ok(false)
+    } else {
+        Ok(default)
+    }
+}
+
 pub(crate) fn try_or_read_username(stdin: &Stdin) -> Result<String> {
     match get_value("", "username") {
-        Ok(username) => Ok(username),
-        Err(err) => {
-            println!("could not get username from config: {err}");
+        Ok(Some(username)) => Ok(username),
+        Err(_) | Ok(None) => {
+            println!("could not get username from config:");
             prompt("Enter username", stdin)
         }
     }
@@ -57,8 +77,10 @@ pub(crate) fn try_or_read_password(username: &str) -> Result<String> {
 }
 
 pub(crate) fn get_url() -> String {
-    config::get_value("server", "url")
-        .unwrap_or(env!("SERVER_URL").trim_end_matches("/").to_owned())
+    match config::get_value("server", "url") {
+        Ok(Some(url)) => url.trim_end_matches('/').to_owned(),
+        Err(_) | Ok(None) => env!("SERVER_URL").trim_end_matches('/').to_owned(),
+    }
 }
 
 pub(crate) fn get_client() -> Result<reqwest::blocking::Client> {

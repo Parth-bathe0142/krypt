@@ -21,6 +21,17 @@ pub(crate) fn handle_tasks(matches: &ArgMatches) -> Result<()> {
                 Err(anyhow!("No arguments provided"))
             }
         }
+        "set-copy-timeout" => {
+            let timeout = sub_matches.get_one("timeout");
+
+            if let Some(timeout) = timeout {
+                set_copy_timeout(*timeout)
+            } else if sub_matches.get_flag("none") {
+                set_copy_timeout(0)
+            } else {
+                Err(anyhow!("No arguments provided"))
+            }
+        }
         _ => Err(anyhow!("Unknown sub command")),
     }
 }
@@ -74,6 +85,22 @@ pub(crate) fn set_default_url() -> Result<()> {
         println!("Changed from {old} to {default}");
     } else {
         println!("Set url to {default}");
+    }
+
+    Ok(())
+}
+
+/// a timeout of 0 disables the clipboard clearing
+pub(crate) fn set_copy_timeout(timeout: u64) -> Result<()> {
+    let old = if timeout == 0 {
+        add_entry("copy", "timeout", "None")?
+    } else {
+        add_entry("copy", "timeout", &timeout.to_string())?
+    };
+    if let Some(old) = old {
+        println!("Changed copy timeout from {old} to {timeout}");
+    } else {
+        println!("Set copy timeout to {timeout}");
     }
 
     Ok(())

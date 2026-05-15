@@ -5,6 +5,7 @@ use crate::{routes::{
     change_key, change_password, delete_account, delete_key, get_all_keys, get_key, login, ping, set_key, signup
 }, tasks::handle_tasks};
 
+mod clipboard;
 mod config;
 mod keyring;
 mod routes;
@@ -31,6 +32,6 @@ pub fn run(command: Command) -> Result<()> {
         "delete" => delete_key(sub_matches),
 
         "config" => handle_tasks(sub_matches),
-        cmd @ _ => Err(anyhow!("unknown sub command: {cmd}")),
+        cmd => Err(anyhow!("unknown sub command: {cmd}")),
     }
 }

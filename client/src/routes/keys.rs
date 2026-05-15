@@ -1,13 +1,14 @@
-use std::io::{Write, stdout};
-
 use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use reqwest::StatusCode;
 use shared::models::{ChangeKeyPayload, Credentials, Key, KeyPayload, ToJson};
 
-use crate::util::{
-    ToHeader, get_client, get_url, handle_internal_error, handle_unauthorized,
-    handle_unknown_response, prompt, try_or_read_password, try_or_read_username,
+use crate::{
+    clipboard,
+    util::{
+        ToHeader, confirm, get_client, get_url, handle_internal_error, handle_unauthorized,
+        handle_unknown_response, prompt, try_or_read_password, try_or_read_username,
+    },
 };
 
 pub fn get_key(matches: &ArgMatches) -> Result<()> {
@@ -40,7 +41,13 @@ pub fn get_key(matches: &ArgMatches) -> Result<()> {
                 .text()
                 .map_err(|_| anyhow!("empty response body"))?;
 
-            println!("{key} = {value}");
+            match clipboard::copy(&value) {
+                Ok(_) => (),
+                Err(err) => {
+                    println!("Failed to copy value to clipboard: {err}");
+                    println!("Print to console?: ")
+                }
+            }
         }
         StatusCode::NOT_FOUND => println!("Key '{}' not found", key),
         StatusCode::UNAUTHORIZED => handle_unauthorized(response),
@@ -100,7 +107,7 @@ pub fn set_key(matches: &ArgMatches) -> Result<()> {
         .get_one::<String>("name")
         .ok_or_else(|| anyhow!("no key name provided"))?;
 
-    let value = prompt("Enter value: ", &stdin)?;
+    let value = prompt("Enter value", &stdin)?;
 
     let url = get_url();
     let body = KeyPayload::new(
@@ -138,7 +145,7 @@ pub fn change_key(matches: &ArgMatches) -> Result<()> {
         .get_one::<String>("name")
         .ok_or_else(|| anyhow!("no key name provided"))?;
 
-    let value = prompt("Enter value: ", &stdin)?;
+    let value = prompt("Enter value", &stdin)?;
 
     let url = get_url();
 
@@ -173,14 +180,11 @@ pub fn delete_key(matches: &ArgMatches) -> Result<()> {
         .get_one::<String>("name")
         .ok_or_else(|| anyhow!("no key name provided"))?;
 
-    print!("Are you sure you want to delete the key '{}'? (y/N): ", key);
-    stdout().flush()?;
-    let mut confirmation = String::new();
-    stdin
-        .read_line(&mut confirmation)
-        .map_err(|_| anyhow!("failed to read confirmation"))?;
-
-    if confirmation.trim() != "y" {
+    if confirm(
+        &format!("Are you sure you want to delete the key '{key}'?"),
+        true,
+        &stdin,
+    )? {
         println!("Aborted");
         return Ok(());
     }
