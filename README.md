@@ -13,10 +13,8 @@ Instead of running a traditional long-lived backend, Spin executes server logic 
 Get up and running in 2 minutes:
 
 ```bash
-# Install the CLI
-git clone https://github.com/Parth-bathe0142/krypt.git
-cd krypt/client
-cargo install --path .
+# Install the CLI from git
+cargo install --git https://github.com/Parth-bathe0142/krypt.git krypt
 
 # Sign up and start storing credentials
 krypt signup
@@ -36,19 +34,17 @@ Spin is an open-source framework for building and running event-driven microserv
 
 This approach is conceptually similar to **CGI (Common Gateway Interface)**, but more modern and efficient:
 
-| Feature     | CGI                     | Spin / WASM                   |
-| ----------- | ----------------------- | ----------------------------- |
-| Execution   | New process per request | New Wasm instance per request |
-| Performance | Heavy (spawns multiple processes)   | Lightweight Wasm runtime    |
-| Isolation   | Strong                  | Strong                        |
-| Portability | Platform dependent binaries       | Runs anywhere               |
+| Feature     | CGI                                 | Spin / WASM                   |
+| ----------- | ----------------------------------- | ----------------------------- |
+| Execution   | New process per request             | New Wasm instance per request |
+| Performance | Heavy (spawns multiple processes)   | Lightweight Wasm runtime      |
+| Portability | Platform dependent binaries, may need docker to run | Runs anywhere, docker not required |
 
 ---
 
 ## Security Model
 
-* Stored keys are **encrypted on the server**
-* Encryption is tied to the user's password and updated when the password is changed
+* Stored keys are encrypted on the server using the user's password and updated when the password is changed
 * Every request is authenticated (no sessions or tokens)
 * Password is stored locally in the system keyring
 
@@ -138,7 +134,11 @@ Krypt uses the `dirs` and `keyring` crates with native backends for credential s
 * **macOS**: `apple-native` (Keychain)
 * **Windows**: `windows-native` (Windows Credential Manager)
 
-Tested and working on Linux. macOS and Windows support is built-in but not yet verified.
+For clipboard access, Krypt has two implementations:
+* **wl-copy** — Wayland clipboard manager, implemented because arboard does not work well with hyprland on my device.
+* **arboard** — Cross-platform clipboard library expected to work on most devices.
+
+On first use, Krypt probes both implementations in order and automatically sets the working one as default.
 
 ---
 
@@ -178,7 +178,7 @@ Lists all keys stored on the server under the logged in account.
 ```bash
 krypt get github
 ```
-Retrieves and displays the value of that key if present.
+Retrieves and copies the value of that key to the clipboard if present. If a timeout is set, the copied key will be removed from the clipboard for security.
 
 ---
 
@@ -207,8 +207,28 @@ krypt chpassword
 krypt logout
 krypt delete-account
 ```
+### Configuration
+#### Set server URL
+```bash
+krypt config set-url https://example.com
+```
+Sets the URL of the deployed server for the CLI to connect to. It will first try to ping the server and update the config only if the ping was successful.
 
----
+Or reset to the default URL from build.rs:
+```bash
+krypt config set-url --default
+```
+
+#### Set clipboard timeout
+```bash
+krypt config set-copy-timeout 30
+```
+Sets the timeout in seconds (1-60) for automatically clearing copied key from the clipboard.
+
+To disable the timeout and keep keys in the clipboard indefinitely:
+```bash
+krypt config set-copy-timeout --none
+```
 
 ## Troubleshooting
 
@@ -236,9 +256,9 @@ If either fails, an error is displayed and you're prompted to enter the values m
 ## Limitations & Future Scope
 
 * No account recovery mechanism yet, so losing your password means losing access to stored data.
-* Authentication is required on every request. If credentials fail to store, you'll be prompted each time (see Troubleshooting).
-* No way to change the server URL to point to a different deployment. This can be moved from `build.rs` to the config file.
+* Authentication is required on every request. If credentials fail to store, you'll be prompted each time.
 * Uses an older version of the `spin_sdk` to maintain compatibility with Fermyon Cloud, which still only supports WASIp1.
+* Support for more clipboard managers, or fallback to printing to console
 
 ---
 
